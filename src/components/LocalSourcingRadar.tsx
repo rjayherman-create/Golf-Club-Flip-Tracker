@@ -310,7 +310,18 @@ export function LocalSourcingRadar({
     maxPrice: '500',
   })
 
-  const selectedLead = leads.find((lead) => lead.id === leadId) ?? leads[0]
+  const eligibleLeads = useMemo(
+    () =>
+      leads.filter(
+        (lead) =>
+          !lead.shipping_required &&
+          (lead.pickup_available || lead.local_delivery_available) &&
+          lead.estimated_drive_minutes <= settings.max_drive_time_minutes,
+      ),
+    [leads, settings.max_drive_time_minutes],
+  )
+
+  const selectedLead = eligibleLeads.find((lead) => lead.id === leadId) ?? eligibleLeads[0]
   const manualFacebookSources = useMemo(
     () => sources.filter((source) => source.source_type === 'facebook_manual' && source.enabled),
     [sources],
@@ -321,26 +332,35 @@ export function LocalSourcingRadar({
   )
   const scanSources = useMemo(() => sources.filter((source) => source.enabled), [sources])
 
-  const strongBuys = useMemo(() => leads.filter((lead) => lead.deal_label === 'Strong Buy'), [leads])
+  const strongBuys = useMemo(
+    () => eligibleLeads.filter((lead) => lead.deal_label === 'Strong Buy'),
+    [eligibleLeads],
+  )
   const todaysLeads = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10)
-    return leads.filter((lead) => lead.created_at.slice(0, 10) === today)
-  }, [leads])
+    return eligibleLeads.filter((lead) => lead.created_at.slice(0, 10) === today)
+  }, [eligibleLeads])
   const followupsDueToday = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10)
     return followups.filter((followup) => followup.due_date === today && !followup.completed)
   }, [followups])
 
   const dueLeadIds = useMemo(() => new Set(followupsDueToday.map((item) => item.lead_id)), [followupsDueToday])
-  const noPhotoLeads = useMemo(() => leads.filter((lead) => hasNoOriginalPhotos(lead) && lead.status !== 'sold'), [leads])
+  const noPhotoLeads = useMemo(
+    () => eligibleLeads.filter((lead) => hasNoOriginalPhotos(lead) && lead.status !== 'sold'),
+    [eligibleLeads],
+  )
   const strongBuyOpenLeads = useMemo(
-    () => leads.filter((lead) => lead.deal_label === 'Strong Buy' && lead.status !== 'sold' && lead.status !== 'passed'),
-    [leads],
+    () =>
+      eligibleLeads.filter(
+        (lead) => lead.deal_label === 'Strong Buy' && lead.status !== 'sold' && lead.status !== 'passed',
+      ),
+    [eligibleLeads],
   )
 
   const filteredLeads = useMemo(() => {
     const lowered = searchText.trim().toLowerCase()
-    return leads.filter((lead) => {
+    return eligibleLeads.filter((lead) => {
       const countyMatch = countyFilter === 'All' || lead.county.toLowerCase() === countyFilter.toLowerCase()
       const sourceMatch = sourceFilter === 'All' || lead.source_name === sourceFilter
       const textMatch =
@@ -356,37 +376,37 @@ export function LocalSourcingRadar({
 
       return countyMatch && sourceMatch && textMatch && quickMatch
     })
-  }, [countyFilter, dueLeadIds, leads, quickFilter, searchText, sourceFilter])
+  }, [countyFilter, dueLeadIds, eligibleLeads, quickFilter, searchText, sourceFilter])
 
-  const totalPotentialProfit = leads.reduce((sum, lead) => sum + Math.max(0, lead.estimated_profit_high), 0)
-  const averageExpectedProfit = leads.length
-    ? leads.reduce((sum, lead) => sum + lead.estimated_profit_low, 0) / leads.length
+  const totalPotentialProfit = eligibleLeads.reduce((sum, lead) => sum + Math.max(0, lead.estimated_profit_high), 0)
+  const averageExpectedProfit = eligibleLeads.length
+    ? eligibleLeads.reduce((sum, lead) => sum + lead.estimated_profit_low, 0) / eligibleLeads.length
     : 0
 
   const leadsByCounty = useMemo(() => {
     const grouped: Record<string, number> = {}
-    leads.forEach((lead) => {
+    eligibleLeads.forEach((lead) => {
       grouped[lead.county] = (grouped[lead.county] ?? 0) + 1
     })
     return grouped
-  }, [leads])
+  }, [eligibleLeads])
 
   const leadsBySource = useMemo(() => {
     const grouped: Record<string, number> = {}
-    leads.forEach((lead) => {
+    eligibleLeads.forEach((lead) => {
       grouped[lead.source_name] = (grouped[lead.source_name] ?? 0) + 1
     })
     return grouped
-  }, [leads])
+  }, [eligibleLeads])
 
   const monthKey = new Date().toISOString().slice(0, 7)
-  const boughtThisMonth = leads.filter((lead) => lead.status === 'bought' && lead.updated_at.startsWith(monthKey)).length
-  const soldThisMonth = leads.filter((lead) => lead.status === 'sold' && lead.updated_at.startsWith(monthKey)).length
-  const roiThisMonth = leads.length
-    ? leads
+  const boughtThisMonth = eligibleLeads.filter((lead) => lead.status === 'bought' && lead.updated_at.startsWith(monthKey)).length
+  const soldThisMonth = eligibleLeads.filter((lead) => lead.status === 'sold' && lead.updated_at.startsWith(monthKey)).length
+  const roiThisMonth = eligibleLeads.length
+    ? eligibleLeads
         .filter((lead) => lead.updated_at.startsWith(monthKey))
         .reduce((sum, lead) => sum + lead.deal_score, 0) /
-      Math.max(1, leads.filter((lead) => lead.updated_at.startsWith(monthKey)).length)
+      Math.max(1, eligibleLeads.filter((lead) => lead.updated_at.startsWith(monthKey)).length)
     : 0
 
   const currentLead = selectedLead
@@ -456,7 +476,7 @@ export function LocalSourcingRadar({
     const nextLead: GolfLeadRadar = {
       id: crypto.randomUUID(),
       source_id: source?.id ?? '',
-      source_name: source?.source_name ?? 'Facebook Manual',
+      source_name: source?.source_name ?? 'Facebook Marketplace',
       source_url: facebookForm.sourceUrl,
       title: facebookForm.title,
       description: facebookForm.description,
@@ -471,7 +491,7 @@ export function LocalSourcingRadar({
       estimated_drive_minutes: 0,
       pickup_available: facebookForm.pickupChoice !== 'shipping',
       local_delivery_available: facebookForm.pickupChoice === 'delivery',
-      shipping_required: facebookForm.pickupChoice === 'shipping',
+      shipping_required: false,
       brand_detected: facebookForm.title.split(' ')[0] ?? '',
       model_detected: facebookForm.title,
       club_type_detected: 'unknown',
@@ -514,7 +534,7 @@ export function LocalSourcingRadar({
     const minPrice = Number(craigslistForm.minPrice) || 0
     const maxPrice = Number(craigslistForm.maxPrice) || 999999
 
-    const strictMatches = leads.filter((lead) => {
+    const strictMatches = eligibleLeads.filter((lead) => {
       const keywordMatch = [lead.title, lead.description, lead.brand_detected, lead.model_detected]
         .join(' ')
         .toLowerCase()
@@ -536,7 +556,7 @@ export function LocalSourcingRadar({
     }
 
     // Fallback: show eligible local leads so search never appears broken.
-    return leads.filter((lead) => {
+    return eligibleLeads.filter((lead) => {
       const priceMatch = lead.asking_price >= minPrice && lead.asking_price <= maxPrice
       const countyMatch =
         craigslistForm.county === 'All' || lead.county.toLowerCase() === craigslistForm.county.toLowerCase()
@@ -611,7 +631,7 @@ export function LocalSourcingRadar({
           <p>
             The main job is to find a source of golf clubs and bags first. Scan local used clubs, golf
             bags, and club lots across Long Island, NYC, and nearby tri-state pickup zones. The module
-            is manual-import friendly and avoids risky scraping.
+              focuses on local pickup and local delivery only.
           </p>
           <div className="row-wrap">
             <button className="btn btn-primary" onClick={() => onNavigate('/sourcing/add-facebook')}>
@@ -622,7 +642,7 @@ export function LocalSourcingRadar({
             </button>
           </div>
           <div className="business-rule-banner">
-            <strong>Source finder:</strong> Facebook manual imports stay highest priority. Craigslist and other public listings feed the automated radar.
+            <strong>Source finder:</strong> Facebook Marketplace and Craigslist only. No shipping-only opportunities.
           </div>
         </section>
 
@@ -630,9 +650,9 @@ export function LocalSourcingRadar({
           <h4>Lead source priority</h4>
           <div className="chip-grid">
             <span className="badge badge-strong-buy">Facebook manual import</span>
-            <span className="badge badge-good">Craigslist / public radar</span>
+            <span className="badge badge-good">Craigslist</span>
             <span className="badge">Inspect Facebook leads first</span>
-            <span className="badge">Radar should focus on pickup, margin, and bundle potential</span>
+            <span className="badge">Focus on pickup, local delivery, and margin</span>
           </div>
         </section>
 
@@ -901,7 +921,7 @@ export function LocalSourcingRadar({
     return (
       <section className="card form-grid">
         <h3>Manual Facebook Marketplace Import</h3>
-        <p className="span-2">Compliant workflow: the user copies the listing details into the app. No automated scraping.</p>
+          <p className="span-2">Compliant workflow: copy listing details from Facebook Marketplace only. No automated scraping.</p>
         <label className="span-2">
           Facebook listing URL
           <input value={facebookForm.sourceUrl} onChange={(event) => setFacebookForm((prev) => ({ ...prev, sourceUrl: event.target.value }))} />
@@ -949,11 +969,10 @@ export function LocalSourcingRadar({
           />
         </label>
         <label>
-          Pickup/local delivery/shipping
+          Pickup or local delivery
           <select value={facebookForm.pickupChoice} onChange={(event) => setFacebookForm((prev) => ({ ...prev, pickupChoice: event.target.value as 'pickup' | 'delivery' | 'shipping' }))}>
             <option value="pickup">Pickup</option>
             <option value="delivery">Local delivery</option>
-            <option value="shipping">Shipping required</option>
           </select>
         </label>
         <label>
@@ -987,8 +1006,8 @@ export function LocalSourcingRadar({
     return (
       <div className="stack-lg">
         <section className="card form-grid">
-          <h3>Facebook + Craigslist + Public Listing Connector</h3>
-          <p className="span-2">Search now auto-adds deals from enabled sources, including Facebook and Craigslist. Respectful connector only: rate-limited, no login bypassing, no CAPTCHA bypassing, no private data scraping.</p>
+          <h3>Facebook Marketplace + Craigslist Connector</h3>
+          <p className="span-2">Search now auto-adds deals only from Facebook Marketplace and Craigslist. Shipping-only deals are excluded automatically.</p>
           <label>
             Source selector
             <select value={craigslistForm.sourceId} onChange={(event) => setCraigslistForm((prev) => ({ ...prev, sourceId: event.target.value }))}>
@@ -1034,7 +1053,6 @@ export function LocalSourcingRadar({
             </button>
           </div>
         </section>
-
         <section className="card">
           <h4>New leads preview</h4>
           <div className="deal-card-grid">
@@ -1315,7 +1333,7 @@ export function LocalSourcingRadar({
   function renderSettings() {
     return (
       <section className="card form-grid">
-        <h3>Sourcing Settings</h3>
+          <h3>Sourcing Settings</h3>
         <label>
           Home/base zip code
           <input value={settings.base_zip_code} onChange={(event) => onUpdateSettings({ ...settings, base_zip_code: event.target.value })} />
@@ -1372,6 +1390,11 @@ export function LocalSourcingRadar({
         <button className="btn" onClick={() => onNavigate('/sourcing/craigslist')}>Craigslist</button>
         <button className="btn" onClick={() => onNavigate(`/sourcing/lead/${selectedLead?.id ?? ''}`)}>Lead Detail</button>
         <button className="btn" onClick={() => onNavigate('/sourcing/settings')}>Settings</button>
+      </section>
+      <section className="card">
+        <p>
+          This tracker focuses only on Facebook Marketplace and Craigslist golf club deals in the Long Island, NYC, Westchester, and nearby tristate area. The goal is to find local pickup or delivery opportunities with strong resale potential.
+        </p>
       </section>
 
       {view === 'dashboard' && renderDashboard()}

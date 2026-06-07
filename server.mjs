@@ -97,6 +97,13 @@ function classifyDealLabel(score) {
   return 'Avoid'
 }
 
+function rejectIfShippingDeal(lead) {
+  if (lead?.shipping_required) {
+    return 'Shipping deals are not allowed. Only local pickup or local delivery deals are supported.'
+  }
+  return ''
+}
+
 function lookupSource(db, sourceType) {
   const sources = db.sourcing_sources ?? []
   if (sourceType === 'facebook_manual') {
@@ -276,7 +283,9 @@ async function buildDealTemplates(db) {
       updated_at: now,
       last_checked_at: now,
     },
-  ].map((template) => {
+  ]
+    .filter((template) => !template.shipping_required)
+    .map((template) => {
     const valuation = estimatePublicDeal(template, baseCount)
     return {
       id: crypto.randomUUID(),
@@ -284,7 +293,7 @@ async function buildDealTemplates(db) {
       ...template,
       ...valuation,
     }
-  })
+    })
 
   return Promise.all(templates.map((lead) => hydrateLeadImageUrls(lead)))
 }
@@ -800,6 +809,13 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'POST') {
       const body = await parseBody(req)
+      if (collection === 'golf_leads') {
+        const shippingError = rejectIfShippingDeal(body)
+        if (shippingError) {
+          sendJson(res, 400, { error: shippingError })
+          return
+        }
+      }
       let nextItem = { ...(body ?? {}), id: body?.id ?? crypto.randomUUID() }
       if (collection === 'golf_leads') {
         nextItem = await hydrateLeadImageUrls(nextItem)
@@ -830,6 +846,13 @@ const server = http.createServer(async (req, res) => {
       if (currentIndex === -1) {
         sendJson(res, 404, { error: 'Not found' })
         return
+      }
+      if (itemRoute.collection === 'golf_leads') {
+        const shippingError = rejectIfShippingDeal({ ...currentItems[currentIndex], ...(body ?? {}) })
+        if (shippingError) {
+          sendJson(res, 400, { error: shippingError })
+          return
+        }
       }
       const updated = { ...currentItems[currentIndex], ...(body ?? {}), id: itemRoute.id }
       currentItems[currentIndex] = updated
