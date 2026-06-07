@@ -15,6 +15,9 @@ export function SalesTracker({ sales, inventory, onAddSale }: SalesTrackerProps)
     dateSold: new Date().toISOString().slice(0, 10),
     listedPrice: '',
     soldPrice: '',
+    fees: '0',
+    paymentType: 'Cash' as Sale['paymentType'],
+    buyerName: '',
     platform: 'Facebook Marketplace',
     buyerTown: '',
     notes: '',
@@ -26,13 +29,19 @@ export function SalesTracker({ sales, inventory, onAddSale }: SalesTrackerProps)
   )
 
   const totalSales = sales.length
-  const totalProfit = sales.reduce((sum, sale) => sum + sale.profit, 0)
+  const totalInvested = sales.reduce((sum, sale) => sum + sale.totalCost, 0)
+  const totalSold = sales.reduce((sum, sale) => sum + sale.soldPrice, 0)
+  const grossProfit = sales.reduce((sum, sale) => sum + sale.profit, 0)
+  const netProfit = sales.reduce((sum, sale) => sum + (sale.netProfit ?? sale.profit), 0)
   const averageDays = sales.length
     ? sales.reduce((sum, sale) => sum + sale.daysToSell, 0) / sales.length
     : 0
 
-  const bestRoiItem = sales.slice().sort((a, b) => b.roi - a.roi)[0]
-  const slowestItem = sales.slice().sort((a, b) => b.daysToSell - a.daysToSell)[0]
+  const worstFlip = sales.slice().sort((a, b) => (a.netProfit ?? a.profit) - (b.netProfit ?? b.profit))[0]
+  const bestFlip = sales.slice().sort((a, b) => (b.netProfit ?? b.profit) - (a.netProfit ?? a.profit))[0]
+  const unsoldInventoryValue = inventory
+    .filter((item) => item.status !== 'Sold')
+    .reduce((sum, item) => sum + item.estimatedResale, 0)
 
   const brandProfitMap: Record<string, number> = {}
   const sourceProfitMap: Record<string, number> = {}
@@ -60,6 +69,9 @@ export function SalesTracker({ sales, inventory, onAddSale }: SalesTrackerProps)
       dateSold: form.dateSold,
       listedPrice: Number(form.listedPrice) || selectedItem.targetListPrice,
       soldPrice: Number(form.soldPrice) || selectedItem.lowestAcceptablePrice,
+      fees: Number(form.fees) || 0,
+      paymentType: form.paymentType,
+      buyerName: form.buyerName,
       totalCost: selectedItem.totalCost,
       profit: 0,
       roi: 0,
@@ -74,6 +86,9 @@ export function SalesTracker({ sales, inventory, onAddSale }: SalesTrackerProps)
       ...prev,
       listedPrice: '',
       soldPrice: '',
+      fees: '0',
+      paymentType: 'Cash',
+      buyerName: '',
       buyerTown: '',
       notes: '',
     }))
@@ -83,24 +98,40 @@ export function SalesTracker({ sales, inventory, onAddSale }: SalesTrackerProps)
     <div className="stack-lg">
       <section className="stats-grid">
         <article className="card">
-          <h4>Total sales</h4>
-          <strong>{totalSales}</strong>
+          <h4>Total invested</h4>
+          <strong>${totalInvested.toFixed(2)}</strong>
         </article>
         <article className="card">
-          <h4>Total profit</h4>
-          <strong className="profit">${totalProfit.toFixed(2)}</strong>
+          <h4>Total sold</h4>
+          <strong>${totalSold.toFixed(2)}</strong>
         </article>
         <article className="card">
-          <h4>Best ROI item</h4>
-          <strong>{bestRoiItem?.itemName ?? '-'}</strong>
+          <h4>Gross profit</h4>
+          <strong className="profit">${grossProfit.toFixed(2)}</strong>
         </article>
         <article className="card">
-          <h4>Slowest item</h4>
-          <strong>{slowestItem?.itemName ?? '-'}</strong>
+          <h4>Net profit</h4>
+          <strong className="profit">${netProfit.toFixed(2)}</strong>
+        </article>
+        <article className="card">
+          <h4>Average profit per club</h4>
+          <strong>${(totalSales ? netProfit / totalSales : 0).toFixed(2)}</strong>
+        </article>
+        <article className="card">
+          <h4>Best flip</h4>
+          <strong>{bestFlip?.itemName ?? '-'}</strong>
+        </article>
+        <article className="card">
+          <h4>Worst flip</h4>
+          <strong>{worstFlip?.itemName ?? '-'}</strong>
         </article>
         <article className="card">
           <h4>Average days to sell</h4>
           <strong>{averageDays.toFixed(1)}</strong>
+        </article>
+        <article className="card">
+          <h4>Unsold inventory value</h4>
+          <strong>${unsoldInventoryValue.toFixed(2)}</strong>
         </article>
         <article className="card">
           <h4>Best brand by profit</h4>
@@ -161,6 +192,29 @@ export function SalesTracker({ sales, inventory, onAddSale }: SalesTrackerProps)
             />
           </label>
           <label>
+            Fees
+            <input
+              type="number"
+              value={form.fees}
+              onChange={(e) => setForm((prev) => ({ ...prev, fees: e.target.value }))}
+            />
+          </label>
+          <label>
+            Payment type
+            <select value={form.paymentType} onChange={(e) => setForm((prev) => ({ ...prev, paymentType: e.target.value as Sale['paymentType'] }))}>
+              {['Cash', 'Zelle', 'Venmo', 'PayPal', 'Other'].map((type) => (
+                <option key={type}>{type}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Buyer name
+            <input
+              value={form.buyerName}
+              onChange={(e) => setForm((prev) => ({ ...prev, buyerName: e.target.value }))}
+            />
+          </label>
+          <label>
             Platform
             <input
               value={form.platform}
@@ -197,8 +251,11 @@ export function SalesTracker({ sales, inventory, onAddSale }: SalesTrackerProps)
               <th>Date sold</th>
               <th>Listed price</th>
               <th>Sold price</th>
+              <th>Fees</th>
               <th>Purchase cost</th>
               <th>Platform</th>
+              <th>Payment</th>
+              <th>Buyer</th>
               <th>Buyer town</th>
               <th>Days to sell</th>
               <th>Profit</th>
@@ -213,11 +270,14 @@ export function SalesTracker({ sales, inventory, onAddSale }: SalesTrackerProps)
                 <td>{sale.dateSold}</td>
                 <td>${sale.listedPrice.toFixed(2)}</td>
                 <td>${sale.soldPrice.toFixed(2)}</td>
+                <td>${(sale.fees ?? 0).toFixed(2)}</td>
                 <td>${sale.totalCost.toFixed(2)}</td>
                 <td>{sale.platform}</td>
+                <td>{sale.paymentType ?? '-'}</td>
+                <td>{sale.buyerName ?? '-'}</td>
                 <td>{sale.buyerTown}</td>
                 <td>{sale.daysToSell}</td>
-                <td className={sale.profit >= 0 ? 'profit' : 'loss'}>${sale.profit.toFixed(2)}</td>
+                <td className={(sale.netProfit ?? sale.profit) >= 0 ? 'profit' : 'loss'}>${(sale.netProfit ?? sale.profit).toFixed(2)}</td>
                 <td>{sale.roi.toFixed(1)}%</td>
               </tr>
             ))}

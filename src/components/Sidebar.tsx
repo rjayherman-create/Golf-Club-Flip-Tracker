@@ -5,23 +5,31 @@ interface SidebarProps {
   onNavigate: (page: PageKey) => void
   isOpen?: boolean
   onClose?: () => void
+  variant?: 'desktop' | 'mobile'
 }
 
 const navItems: Array<{ key: PageKey; label: string }> = [
   { key: 'dashboard', label: 'Dashboard' },
-  { key: 'lead-form', label: 'Add Lead' },
-  { key: 'lead-analyzer', label: 'Analyze Deal' },
+  { key: 'sourcing-radar', label: 'Source Deals' },
+  { key: 'lead-form', label: 'Add Club' },
+  { key: 'club-flip', label: 'Identify From Photo' },
+  { key: 'lead-analyzer', label: 'Value Checker' },
   { key: 'inventory', label: 'Inventory' },
   { key: 'listings', label: 'Listings' },
-  { key: 'sales', label: 'Sales' },
-  { key: 'sources', label: 'Sources' },
-  { key: 'value-guide', label: 'Value Guide' },
+  { key: 'sales', label: 'Sold / Profit' },
+  { key: 'csv-export', label: 'CSV Export' },
   { key: 'settings', label: 'Settings' },
 ]
 
-export function Sidebar({ activePage, onNavigate, isOpen = true, onClose }: SidebarProps) {
+export function Sidebar({
+  activePage,
+  onNavigate,
+  isOpen = false,
+  onClose,
+  variant = 'desktop',
+}: SidebarProps) {
   return (
-    <aside className={`sidebar ${isOpen ? 'open' : ''}`}>
+    <aside className={`sidebar sidebar-${variant} ${isOpen ? 'open' : ''}`}>
       <div className="logo-wrap">
         <h1>Golf Flip Tracker</h1>
         <p>Buy bundles, sell individual clubs.</p>
@@ -41,7 +49,7 @@ export function Sidebar({ activePage, onNavigate, isOpen = true, onClose }: Side
         ))}
       </nav>
       <div className="sidebar-foot">
-        <p>Know your max offer before you drive.</p>
+        <p>Find the source before you price the flip.</p>
       </div>
     </aside>
   )

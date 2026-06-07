@@ -47,6 +47,15 @@ function baseLead(lead: Partial<Lead>): Lead {
 }
 
 export const defaultSettings: AppSettings = {
+  themePreference: 'premium-navy-amber',
+  legalLastUpdated: '2026-06-07',
+  legalContactEmail: 'owner@example.com',
+  userName: 'Owner',
+  businessName: 'Golf Flip Tracker',
+  defaultPickupArea: 'Long Island, NY',
+  defaultListingLocation: 'Long Island, NY',
+  defaultMarketplaceText: 'Cash preferred. Local meetup only. First come first served.',
+  preferredProfitMarginPercent: 35,
   defaultLocation: 'Long Island, NY',
   defaultResaleDiscount: 15,
   defaultMaxBuyPercentage: 45,

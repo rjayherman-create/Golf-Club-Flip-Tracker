@@ -4,9 +4,10 @@ import { generateFacebookListing } from '../utils/valuation'
 
 interface ListingGeneratorProps {
   inventory: InventoryItem[]
+  onUpdateInventory: (item: InventoryItem) => void
 }
 
-export function ListingGenerator({ inventory }: ListingGeneratorProps) {
+export function ListingGenerator({ inventory, onUpdateInventory }: ListingGeneratorProps) {
   const [selectedItemId, setSelectedItemId] = useState(inventory[0]?.id ?? '')
   const selectedItem = useMemo(
     () => inventory.find((item) => item.id === selectedItemId) ?? inventory[0],
@@ -15,7 +16,7 @@ export function ListingGenerator({ inventory }: ListingGeneratorProps) {
 
   const [pickupLocation, setPickupLocation] = useState('Long Island, NY')
   const [defects, setDefects] = useState('')
-  const [notes, setNotes] = useState('')
+  const [conditionNotes, setConditionNotes] = useState('')
 
   if (!selectedItem) {
     return (
@@ -63,8 +64,8 @@ export function ListingGenerator({ inventory }: ListingGeneratorProps) {
           <input value={defects} onChange={(e) => setDefects(e.target.value)} />
         </label>
         <label className="span-2">
-          Notes
-          <textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />
+          Condition notes
+          <textarea rows={3} value={conditionNotes} onChange={(e) => setConditionNotes(e.target.value)} />
         </label>
       </section>
 
@@ -75,7 +76,7 @@ export function ListingGenerator({ inventory }: ListingGeneratorProps) {
 
       <section className="card">
         <h4>Generated description</h4>
-        <textarea value={`${listing.description}\n\n${notes}`} readOnly rows={12} />
+        <textarea value={`${listing.description}\n\n${conditionNotes}`} readOnly rows={12} />
       </section>
 
       <section className="card">
@@ -93,7 +94,15 @@ export function ListingGenerator({ inventory }: ListingGeneratorProps) {
 
       <div className="row-wrap">
         <button className="btn btn-primary">Generate Listing</button>
-        <button className="btn">Facebook listing export placeholder</button>
+        <button className="btn" onClick={() => void navigator.clipboard.writeText(listing.title)}>
+          Copy Title
+        </button>
+        <button className="btn" onClick={() => void navigator.clipboard.writeText(`${listing.description}\n\n${conditionNotes}`)}>
+          Copy Description
+        </button>
+        <button className="btn btn-secondary" onClick={() => onUpdateInventory({ ...selectedItem, status: 'Listed' })}>
+          Mark as Listed
+        </button>
       </div>
     </div>
   )

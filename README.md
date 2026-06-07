@@ -17,57 +17,44 @@ If you are developing a production application, we recommend updating the config
 
 ```js
 export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+  # Golf Flip Tracker
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+  Golf Flip Tracker is a local-first tool for finding used golf clubs and bags, pricing deals, tracking inventory, and managing sales.
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+  ## Run locally
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+  ```bash
+  npm install
+  npm run server
+  npm run dev
+  ```
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+  The app uses a local API server on `http://127.0.0.1:3001` and Vite for the UI.
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
+  ## Live-ready build
+
+  ```bash
+  npm run build
+  npm run preview
+  ```
+
+  Path-based routes are supported through the SPA fallback in `public/_redirects`, so deep links like `/sourcing`, `/lead-form`, and `/lead-analyzer` load correctly on static hosts.
+
+  ## Main routes
+
+  - `/` dashboard
+  - `/sourcing` local sourcing radar
+  - `/lead-form` add deal
+  - `/lead-analyzer` analyze deal
+  - `/inventory` inventory
+  - `/listings` listing generator
+  - `/sales` sales tracker
+  - `/sources` source map / source list
+  - `/value-guide` brand value guide
+  - `/settings` settings
+
+  ## Notes
+
+  - Manual Facebook imports stay separate from automated public-source radar.
+  - The dashboard now puts local sourcing first, followed by add deal and analyze.
       reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```

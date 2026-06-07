@@ -79,11 +79,21 @@ export function LeadAnalyzer({ leads, onUpdateLead, onMoveToInventory }: LeadAna
   const initialMessage = generateSellerMessage('initial')
   const negotiationMessage = generateSellerMessage('negotiation', Math.max(1, Math.round(selectedLead.repairAdjustedMaxOffer)))
   const staleMessage = generateSellerMessage('stale', Math.max(1, Math.round(selectedLead.maxSafeOffer)))
+  const valueRangeLow = Math.max(0, selectedLead.ebayLow || selectedLead.fastSalePrice)
+  const valueRangeHigh = Math.max(valueRangeLow, selectedLead.ebayHigh || selectedLead.conservativeResale)
+  const confidenceScore = Math.max(
+    30,
+    Math.min(
+      100,
+      [selectedLead.ebayLow, selectedLead.ebayAverage, selectedLead.ebayHigh, selectedLead.pgaValue]
+        .filter((value) => value > 0).length * 20 + (selectedLead.brand ? 20 : 0),
+    ),
+  )
 
   return (
     <div className="stack-lg">
       <section className="card form-grid">
-        <h3>Lead Analyzer</h3>
+        <h3>Value Checker</h3>
         <label className="span-2">
           Select lead
           <select value={selectedLead.id} onChange={(e) => setSelectedLeadId(e.target.value)}>
@@ -148,6 +158,7 @@ export function LeadAnalyzer({ leads, onUpdateLead, onMoveToInventory }: LeadAna
 
         <details open>
           <summary>Value comps</summary>
+          <p className="muted-copy">Manual comp entry is supported. eBay and PGA lookup placeholders are below.</p>
           <div className="inline-grid">
             <label>
               eBay sold low
@@ -206,6 +217,14 @@ export function LeadAnalyzer({ leads, onUpdateLead, onMoveToInventory }: LeadAna
               />
             </label>
           </div>
+          <div className="row-wrap" style={{ marginTop: '8px' }}>
+            <button className="btn" type="button" disabled>
+              eBay sold comps lookup (placeholder)
+            </button>
+            <button className="btn" type="button" disabled>
+              PGA Value Guide lookup (placeholder)
+            </button>
+          </div>
         </details>
 
         <details open>
@@ -241,19 +260,19 @@ export function LeadAnalyzer({ leads, onUpdateLead, onMoveToInventory }: LeadAna
 
       <section className="stats-grid">
         <article className="card">
-          <h4>Estimated resale value</h4>
-          <strong>${selectedLead.manualEstimate.toFixed(2)}</strong>
+          <h4>Estimated resale value range</h4>
+          <strong>${valueRangeLow.toFixed(2)} - ${valueRangeHigh.toFixed(2)}</strong>
         </article>
         <article className="card">
-          <h4>Conservative resale</h4>
+          <h4>Recommended Facebook list price</h4>
           <strong>${selectedLead.conservativeResale.toFixed(2)}</strong>
         </article>
         <article className="card">
-          <h4>Fast-sale price</h4>
+          <h4>Quick sale price</h4>
           <strong>${selectedLead.fastSalePrice.toFixed(2)}</strong>
         </article>
         <article className="card">
-          <h4>Maximum safe offer</h4>
+          <h4>Maximum recommended buy price</h4>
           <strong>${selectedLead.maxSafeOffer.toFixed(2)}</strong>
         </article>
         <article className="card">
@@ -261,7 +280,7 @@ export function LeadAnalyzer({ leads, onUpdateLead, onMoveToInventory }: LeadAna
           <strong>${selectedLead.repairAdjustedMaxOffer.toFixed(2)}</strong>
         </article>
         <article className="card">
-          <h4>Estimated gross profit</h4>
+          <h4>Estimated profit</h4>
           <strong className={selectedLead.expectedProfit >= 0 ? 'profit' : 'loss'}>
             ${selectedLead.expectedProfit.toFixed(2)}
           </strong>
@@ -275,7 +294,11 @@ export function LeadAnalyzer({ leads, onUpdateLead, onMoveToInventory }: LeadAna
           <strong>{selectedLead.dealGrade}</strong>
         </article>
         <article className="card">
-          <h4>Recommendation</h4>
+          <h4>Confidence score</h4>
+          <strong>{confidenceScore}%</strong>
+        </article>
+        <article className="card">
+          <h4>Buy/Hold/Avoid</h4>
           <span className={`badge badge-${selectedLead.recommendation.toLowerCase().replace(' ', '-')}`}>
             {selectedLead.recommendation}
           </span>

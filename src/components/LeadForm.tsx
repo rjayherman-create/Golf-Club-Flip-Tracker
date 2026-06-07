@@ -3,7 +3,7 @@ import type { AppSettings, Lead, LeadStatus, SourceType } from '../types'
 import { calculateValuation } from '../utils/valuation'
 
 interface LeadFormProps {
-  onSave: (lead: Lead) => void
+  onSave: (lead: Lead, nextPage?: 'inventory' | 'lead-analyzer' | 'listings') => void
   settings: AppSettings
 }
 
@@ -55,15 +55,18 @@ export function LeadForm({ onSave, settings }: LeadFormProps) {
     title: '',
     sourceType: 'Facebook Marketplace' as SourceType,
     sellerName: '',
+    purchaseDate: new Date().toISOString().slice(0, 10),
     town: '',
     distance: '0',
     askingPrice: '',
+    pickupNotes: '',
     sellerDescription: '',
     listingUrl: '',
     itemType: 'Driver',
     brand: '',
     model: '',
     loft: '',
+    shaftModel: '',
     shaftFlex: 'Unknown' as Lead['shaftFlex'],
     hand: 'Unknown' as Lead['hand'],
     condition: 'Good' as Lead['condition'],
@@ -75,7 +78,7 @@ export function LeadForm({ onSave, settings }: LeadFormProps) {
   const draftLead = useMemo<Lead>(() => {
     return calculateValuation({
       id: crypto.randomUUID(),
-      createdAt: new Date().toISOString(),
+      createdAt: new Date(`${form.purchaseDate}T12:00:00`).toISOString(),
       title: form.title,
       sourceType: form.sourceType,
       sellerName: form.sellerName,
@@ -92,7 +95,13 @@ export function LeadForm({ onSave, settings }: LeadFormProps) {
       hand: form.hand,
       condition: form.condition,
       gripCondition: form.gripCondition,
-      notes: form.notes,
+      notes: [
+        form.notes,
+        form.pickupNotes ? `Pickup/Delivery: ${form.pickupNotes}` : '',
+        form.shaftModel ? `Shaft model: ${form.shaftModel}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n'),
       status: form.status,
       ebayLow: 0,
       ebayAverage: 0,
@@ -120,22 +129,25 @@ export function LeadForm({ onSave, settings }: LeadFormProps) {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    onSave(draftLead)
+  function saveWith(nextPage: 'inventory' | 'lead-analyzer' | 'listings') {
+    if (!form.title.trim()) return
+    onSave(draftLead, nextPage)
     setForm({
       title: '',
       sourceType: 'Facebook Marketplace',
       sellerName: '',
+      purchaseDate: new Date().toISOString().slice(0, 10),
       town: '',
       distance: '0',
       askingPrice: '',
+      pickupNotes: '',
       sellerDescription: '',
       listingUrl: '',
       itemType: 'Driver',
       brand: '',
       model: '',
       loft: '',
+      shaftModel: '',
       shaftFlex: 'Unknown',
       hand: 'Unknown',
       condition: 'Good',
@@ -145,12 +157,17 @@ export function LeadForm({ onSave, settings }: LeadFormProps) {
     })
   }
 
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    saveWith('inventory')
+  }
+
   return (
     <form className="stack-lg" onSubmit={handleSubmit}>
       <section className="card form-grid">
-        <h3>New Lead</h3>
+        <h3>Add Club</h3>
         <label>
-          Lead title
+          Listing title
           <input value={form.title} onChange={(e) => updateField('title', e.target.value)} required />
         </label>
         <label>
@@ -166,7 +183,11 @@ export function LeadForm({ onSave, settings }: LeadFormProps) {
           <input value={form.sellerName} onChange={(e) => updateField('sellerName', e.target.value)} />
         </label>
         <label>
-          Seller town / location
+          Purchase date
+          <input type="date" value={form.purchaseDate} onChange={(e) => updateField('purchaseDate', e.target.value)} />
+        </label>
+        <label>
+          Location
           <input value={form.town} onChange={(e) => updateField('town', e.target.value)} />
         </label>
         <label>
@@ -174,20 +195,23 @@ export function LeadForm({ onSave, settings }: LeadFormProps) {
           <input type="number" value={form.distance} onChange={(e) => updateField('distance', e.target.value)} />
         </label>
         <label>
-          Asking price
+          Purchase price
           <input type="number" value={form.askingPrice} onChange={(e) => updateField('askingPrice', e.target.value)} />
         </label>
         <label className="span-2">
-          Seller description
+          Pickup / delivery notes
+          <input value={form.pickupNotes} onChange={(e) => updateField('pickupNotes', e.target.value)} />
+        </label>
+        <label className="span-2">
+          Seller notes
           <textarea value={form.sellerDescription} onChange={(e) => updateField('sellerDescription', e.target.value)} rows={3} />
         </label>
         <label className="span-2">
           Link to listing
           <input value={form.listingUrl} onChange={(e) => updateField('listingUrl', e.target.value)} />
         </label>
-        <label className="span-2">
-          Photos upload placeholder
-          <input disabled value="Photo upload integration placeholder" />
+        <label className="span-2">Photos
+          <input type="file" accept="image/*" multiple />
         </label>
       </section>
 
@@ -220,6 +244,10 @@ export function LeadForm({ onSave, settings }: LeadFormProps) {
               <option key={option}>{option}</option>
             ))}
           </select>
+        </label>
+        <label>
+          Shaft brand / model
+          <input value={form.shaftModel} onChange={(e) => updateField('shaftModel', e.target.value)} placeholder="Project X HZRDUS" />
         </label>
         <label>
           Hand
@@ -280,17 +308,14 @@ export function LeadForm({ onSave, settings }: LeadFormProps) {
       </section>
 
       <section className="row-wrap">
-        <button className="btn btn-primary" type="submit">
-          Save Lead
+        <button className="btn btn-primary" type="button" onClick={() => saveWith('inventory')}>
+          Save Club
         </button>
-        <button className="btn btn-secondary" type="button">
-          Analyze Deal
+        <button className="btn btn-secondary" type="button" onClick={() => saveWith('lead-analyzer')}>
+          Save and Check Value
         </button>
-        <button className="btn" type="button">
-          Watch
-        </button>
-        <button className="btn btn-danger" type="button">
-          Pass
+        <button className="btn" type="button" onClick={() => saveWith('listings')}>
+          Save and Create Listing
         </button>
       </section>
     </form>

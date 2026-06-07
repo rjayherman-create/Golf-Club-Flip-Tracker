@@ -10,6 +10,8 @@ interface InventoryProps {
 
 export function Inventory({ inventory, onUpdateInventory, onCreateFromBundle }: InventoryProps) {
   const [bundlePrice, setBundlePrice] = useState('150')
+  const [activeFilter, setActiveFilter] = useState('All')
+  const [selectedInventoryId, setSelectedInventoryId] = useState(inventory[0]?.id ?? '')
   const [bundleRows, setBundleRows] = useState([
     { name: 'TaylorMade driver', estimatedResale: '150' },
     { name: 'Odyssey putter', estimatedResale: '100' },
@@ -27,66 +29,98 @@ export function Inventory({ inventory, onUpdateInventory, onCreateFromBundle }: 
     return calculateBundleCostAllocation(rows, Number(bundlePrice) || 0)
   }, [bundleRows, bundlePrice])
 
+  const filteredInventory = useMemo(() => {
+    return inventory.filter((item) => {
+      if (activeFilter === 'All') return true
+      if (activeFilter === 'Needs value check') return item.estimatedResale <= 0
+      if (activeFilter === 'Ready to list') return item.status === 'Ready to List'
+      if (activeFilter === 'Listed') return item.status === 'Listed'
+      if (activeFilter === 'Sold') return item.status === 'Sold'
+      if (activeFilter === 'High profit') return item.targetListPrice - item.totalCost >= 80
+      if (activeFilter === 'Low profit') return item.targetListPrice - item.totalCost < 40
+      return item.clubType.toLowerCase().includes(activeFilter.toLowerCase().slice(0, -1))
+    })
+  }, [activeFilter, inventory])
+
+  const selectedItem = filteredInventory.find((item) => item.id === selectedInventoryId) ?? filteredInventory[0]
+  const expectedProfit = selectedItem ? selectedItem.targetListPrice - selectedItem.totalCost : 0
+
   return (
     <div className="stack-lg">
       <section className="card">
         <h3>Inventory</h3>
-        <p>Use sold comps, condition, and repair cost.</p>
+        <p>Use sold comps, condition, and repair cost. Every record should answer buy, list, hold, sell, or avoid.</p>
+        <div className="chip-grid" style={{ marginTop: '10px' }}>
+          {['All', 'Needs value check', 'Ready to list', 'Listed', 'Sold', 'High profit', 'Low profit', 'Bags', 'Drivers', 'Irons', 'Wedges', 'Putters'].map((filter) => (
+            <button
+              key={filter}
+              className={`chip ${activeFilter === filter ? 'selected red' : ''}`}
+              type="button"
+              onClick={() => setActiveFilter(filter)}
+            >
+              {filter}
+            </button>
+          ))}
+        </div>
       </section>
 
       <section className="table-wrap card">
         <table>
           <thead>
             <tr>
-              <th>Inventory ID</th>
-              <th>Item</th>
-              <th>Brand</th>
+              <th>Photo</th>
+              <th>Brand / Model</th>
+              <th>Club type</th>
+              <th>Condition</th>
+              <th>Paid</th>
+              <th>Estimated value</th>
+              <th>List price</th>
+              <th>Expected profit</th>
               <th>Status</th>
-              <th>Total Cost</th>
-              <th>Target List</th>
-              <th>Estimated Resale</th>
-              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {inventory.map((item) => (
-              <tr key={item.id}>
-                <td>{item.id.slice(0, 8)}</td>
-                <td>{item.itemName}</td>
-                <td>{item.brand}</td>
-                <td>
-                  <span className="badge">{item.status}</span>
-                </td>
+            {filteredInventory.map((item) => (
+              <tr key={item.id} onClick={() => setSelectedInventoryId(item.id)}>
+                <td><span className="badge">No photo</span></td>
+                <td>{item.brand} {item.model}</td>
+                <td>{item.clubType}</td>
+                <td>{item.condition}</td>
                 <td>${item.totalCost.toFixed(2)}</td>
-                <td>${item.targetListPrice.toFixed(2)}</td>
                 <td>${item.estimatedResale.toFixed(2)}</td>
-                <td>
-                  <div className="row-wrap">
-                    <button
-                      className="btn"
-                      onClick={() => onUpdateInventory({ ...item, cleaned: true, status: 'Ready to Photograph' })}
-                    >
-                      Mark cleaned
-                    </button>
-                    <button
-                      className="btn"
-                      onClick={() => onUpdateInventory({ ...item, photographed: true, status: 'Ready to List' })}
-                    >
-                      Mark photographed
-                    </button>
-                    <button className="btn btn-secondary" onClick={() => onUpdateInventory({ ...item, status: 'Listed' })}>
-                      Mark listed
-                    </button>
-                    <button className="btn btn-danger" onClick={() => onUpdateInventory({ ...item, status: 'Archived' })}>
-                      Archive
-                    </button>
-                  </div>
+                <td>${item.targetListPrice.toFixed(2)}</td>
+                <td className={item.targetListPrice - item.totalCost >= 0 ? 'profit' : 'loss'}>
+                  ${(item.targetListPrice - item.totalCost).toFixed(2)}
                 </td>
+                <td><span className="badge">{item.status}</span></td>
               </tr>
             ))}
           </tbody>
         </table>
       </section>
+
+      {selectedItem && (
+        <section className="card">
+          <h4>Club Detail</h4>
+          <div className="stats-grid compact-grid">
+            <article className="card"><h4>Paid price</h4><strong>${selectedItem.totalCost.toFixed(2)}</strong></article>
+            <article className="card"><h4>Estimated value</h4><strong>${selectedItem.estimatedResale.toFixed(2)}</strong></article>
+            <article className="card"><h4>List price</h4><strong>${selectedItem.targetListPrice.toFixed(2)}</strong></article>
+            <article className="card"><h4>Minimum sale price</h4><strong>${selectedItem.lowestAcceptablePrice.toFixed(2)}</strong></article>
+            <article className="card"><h4>Expected profit</h4><strong className={expectedProfit >= 0 ? 'profit' : 'loss'}>${expectedProfit.toFixed(2)}</strong></article>
+            <article className="card"><h4>Margin</h4><strong>{selectedItem.totalCost > 0 ? ((expectedProfit / selectedItem.totalCost) * 100).toFixed(1) : '0.0'}%</strong></article>
+          </div>
+          <p className="muted-copy" style={{ marginTop: '8px' }}>Comps used: eBay sold + local marketplace estimates captured in Value Checker.</p>
+          <div className="row-wrap" style={{ marginTop: '8px' }}>
+            <button className="btn" onClick={() => onUpdateInventory({ ...selectedItem, notes: `${selectedItem.notes}\nEdited ${new Date().toISOString()}`.trim() })}>Edit</button>
+            <button className="btn" onClick={() => onUpdateInventory({ ...selectedItem, status: 'Ready to List' })}>Check Value</button>
+            <button className="btn" onClick={() => onUpdateInventory({ ...selectedItem, status: 'Ready to List' })}>Create Listing</button>
+            <button className="btn btn-secondary" onClick={() => onUpdateInventory({ ...selectedItem, status: 'Listed' })}>Mark Listed</button>
+            <button className="btn btn-primary" onClick={() => onUpdateInventory({ ...selectedItem, status: 'Sold' })}>Mark Sold</button>
+            <button className="btn btn-danger" onClick={() => onUpdateInventory({ ...selectedItem, status: 'Archived' })}>Archive</button>
+          </div>
+        </section>
+      )}
 
       <section className="card form-grid">
         <h3>Bundle Split Tool</h3>

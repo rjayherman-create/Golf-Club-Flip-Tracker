@@ -18,6 +18,62 @@ export function Settings({ settings, onSave }: SettingsProps) {
     <section className="card form-grid">
       <h3>Settings</h3>
       <label>
+        Theme
+        <select
+          value={draft.themePreference}
+          onChange={(e) =>
+            setDraft((prev) => ({
+              ...prev,
+              themePreference: e.target.value as AppSettings['themePreference'],
+            }))
+          }
+        >
+          <option value="premium-navy-amber">Production: Premium Navy + Amber</option>
+          <option value="classic-green-gold">Local: Classic Green + Gold</option>
+        </select>
+      </label>
+      <label>
+        Legal last updated
+        <input
+          type="date"
+          value={draft.legalLastUpdated}
+          onChange={(e) => setDraft((prev) => ({ ...prev, legalLastUpdated: e.target.value }))}
+        />
+      </label>
+      <label>
+        Legal contact email
+        <input
+          type="email"
+          value={draft.legalContactEmail}
+          onChange={(e) => setDraft((prev) => ({ ...prev, legalContactEmail: e.target.value }))}
+          placeholder="legal@example.com"
+        />
+      </label>
+      <label>
+        User profile name
+        <input value={draft.userName} onChange={(e) => setDraft((prev) => ({ ...prev, userName: e.target.value }))} />
+      </label>
+      <label>
+        Business name
+        <input value={draft.businessName} onChange={(e) => setDraft((prev) => ({ ...prev, businessName: e.target.value }))} />
+      </label>
+      <label>
+        Default pickup area
+        <input value={draft.defaultPickupArea} onChange={(e) => setDraft((prev) => ({ ...prev, defaultPickupArea: e.target.value }))} />
+      </label>
+      <label>
+        Default listing location
+        <input value={draft.defaultListingLocation} onChange={(e) => setDraft((prev) => ({ ...prev, defaultListingLocation: e.target.value }))} />
+      </label>
+      <label className="span-2">
+        Default marketplace text
+        <textarea rows={3} value={draft.defaultMarketplaceText} onChange={(e) => setDraft((prev) => ({ ...prev, defaultMarketplaceText: e.target.value }))} />
+      </label>
+      <label>
+        Preferred profit margin %
+        <input type="number" value={draft.preferredProfitMarginPercent} onChange={(e) => setNumber('preferredProfitMarginPercent', e.target.value)} />
+      </label>
+      <label>
         Default location
         <input
           value={draft.defaultLocation}
@@ -91,6 +147,51 @@ export function Settings({ settings, onSave }: SettingsProps) {
       <button className="btn btn-primary" onClick={() => onSave(draft)}>
         Save Settings
       </button>
+      <div className="row-wrap span-2">
+        <button
+          className="btn"
+          type="button"
+          onClick={() => {
+            const snapshot = {
+              timestamp: new Date().toISOString(),
+              settings: draft,
+              backup: Object.fromEntries(
+                Object.entries(localStorage).filter(([key]) => key.startsWith('gft.')),
+              ),
+            }
+            const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' })
+            const url = URL.createObjectURL(blob)
+            const link = document.createElement('a')
+            link.href = url
+            link.download = 'golf-flip-backup.json'
+            link.click()
+            URL.revokeObjectURL(url)
+          }}
+        >
+          Export Backup
+        </button>
+        <label className="btn" style={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}>
+          Import Backup
+          <input
+            type="file"
+            accept="application/json"
+            style={{ display: 'none' }}
+            onChange={async (event) => {
+              const file = event.target.files?.[0]
+              if (!file) return
+              try {
+                const text = await file.text()
+                const parsed = JSON.parse(text) as { backup?: Record<string, string> }
+                if (!parsed.backup) return
+                Object.entries(parsed.backup).forEach(([key, value]) => localStorage.setItem(key, value))
+                window.location.reload()
+              } catch {
+                // Ignore malformed backup files.
+              }
+            }}
+          />
+        </label>
+      </div>
 
       <section className="card placeholder-box span-2">
         <h4>Future Features</h4>

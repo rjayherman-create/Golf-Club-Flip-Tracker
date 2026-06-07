@@ -4,6 +4,8 @@ import type {
   Lead,
   Recommendation,
   Sale,
+  GolfLeadRadar,
+  SourcingLocation,
 } from '../types'
 
 const premiumBrands = [
@@ -52,9 +54,6 @@ export function getConditionDeduction(condition: Lead['condition']): number {
   return map[condition]
 }
 
-function round2(value: number): number {
-  return Math.round(value * 100) / 100
-}
 
 export function calculateDealGrade(roi: number, brandScore: number, condition: Lead['condition']): string {
   if (roi > 120 && brandScore >= 10 && ['Excellent', 'Very Good', 'Good'].includes(condition)) return 'A+'
@@ -215,8 +214,10 @@ export function calculateBundleCostAllocation(
 }
 
 export function calculateProfit(sale: Sale): Sale {
+  const fees = sale.fees ?? 0
   const profit = sale.soldPrice - sale.totalCost
-  const roi = sale.totalCost > 0 ? (profit / sale.totalCost) * 100 : 0
+  const netProfit = sale.soldPrice - fees - sale.totalCost
+  const roi = sale.totalCost > 0 ? (netProfit / sale.totalCost) * 100 : 0
 
   let daysToSell = 0
   if (sale.dateListed && sale.dateSold) {
@@ -229,6 +230,7 @@ export function calculateProfit(sale: Sale): Sale {
   return {
     ...sale,
     profit: round2(profit),
+    netProfit: round2(netProfit),
     roi: round2(roi),
     daysToSell,
   }
@@ -240,6 +242,7 @@ export function calculateDashboardStats(
   sales: Sale[],
 ): DashboardStats {
   const listedItems = inventory.filter((item) => item.status === 'Listed').length
+  const readyToList = inventory.filter((item) => item.status === 'Ready to List').length
   const soldItems = sales.length
   const totalInvested = inventory.reduce((sum, item) => sum + item.totalCost, 0)
   const expectedResaleValue = inventory.reduce((sum, item) => sum + item.estimatedResale, 0)
@@ -264,7 +267,9 @@ export function calculateDashboardStats(
     totalLeads: leads.length,
     activeWatchlist: leads.filter((lead) => lead.status === 'Watch').length,
     purchasedInventory: inventory.length,
+    clubsInInventory: inventory.length,
     listedItems,
+    readyToList,
     soldItems,
     totalInvested: round2(totalInvested),
     expectedResaleValue: round2(expectedResaleValue),
@@ -283,4 +288,180 @@ export function calculateDashboardStats(
 export const brandCollections = {
   premiumBrands,
   goodBrands,
+}
+
+const highValueBrandKeywords = [
+  'Titleist',
+  'Scotty Cameron',
+  'Ping',
+  'Callaway',
+  'TaylorMade',
+  'Mizuno',
+  'Cobra',
+  'Cleveland',
+  'Odyssey',
+  'PXG',
+  'Srixon',
+  'Vokey',
+  'Bettinardi',
+  'Evnroll',
+]
+
+const highValueModelKeywords = [
+  'Scotty Cameron Newport',
+  'Vokey SM7',
+  'Vokey SM8',
+  'Vokey SM9',
+  'Vokey SM10',
+  'TaylorMade Stealth',
+  'TaylorMade Qi10',
+  'TaylorMade SIM',
+  'Callaway Paradym',
+  'Callaway Rogue',
+  'Callaway Epic',
+  'Ping G425',
+  'Ping G430',
+  'Ping G410',
+  'Mizuno JPX',
+  'Mizuno Pro',
+  'Titleist T100',
+  'Titleist T200',
+  'Titleist AP2',
+  'Odyssey White Hot',
+  'Odyssey Stroke Lab',
+]
+
+function safeNumber(value: number | string | null | undefined): number {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+export function estimateGolfValue(lead: Partial<GolfLeadRadar> & {
+  asking_price?: number
+  brand_detected?: string
+  model_detected?: string
+  club_type_detected?: string
+  estimated_resale_low?: number
+  estimated_resale_high?: number
+  estimated_resale_average?: number
+  estimated_profit_low?: number
+  estimated_profit_high?: number
+  shipping_required?: boolean
+  pickup_available?: boolean
+  local_delivery_available?: boolean
+  distance_miles?: number
+  estimated_drive_minutes?: number
+  condition_grade?: string
+  source_url?: string
+  title?: string
+  description?: string
+}) {
+  const askingPrice = safeNumber(lead.asking_price)
+  const brand = lead.brand_detected?.trim() || ''
+  const model = lead.model_detected?.trim() || ''
+  const conditionGrade = (lead.condition_grade ?? 'Good').toLowerCase()
+
+  let estimated_resale_average = safeNumber(lead.estimated_resale_average)
+  if (!estimated_resale_average) {
+    const brandBoost = highValueBrandKeywords.some((keyword) =>
+      brand.toLowerCase().includes(keyword.toLowerCase()),
+    )
+      ? 1.15
+      : 1
+    const modelBoost = highValueModelKeywords.some((keyword) =>
+      `${brand} ${model}`.toLowerCase().includes(keyword.toLowerCase()),
+    )
+      ? 1.2
+      : 1
+    const base = askingPrice > 0 ? askingPrice * 1.55 : 100
+    estimated_resale_average = base * brandBoost * modelBoost
+  }
+
+  const estimated_resale_low = safeNumber(lead.estimated_resale_low) || estimated_resale_average * 0.8
+  const estimated_resale_high = safeNumber(lead.estimated_resale_high) || estimated_resale_average * 1.15
+  const suggested_max_buy_price = Math.min(
+    estimated_resale_average * 0.5,
+    estimated_resale_low * 0.45,
+    askingPrice > 0 ? askingPrice : estimated_resale_average * 0.6,
+  )
+
+  const offerBasedOnAsking = askingPrice > 0 ? askingPrice * 0.65 : suggested_max_buy_price
+  const suggested_first_offer = Math.min(suggested_max_buy_price, offerBasedOnAsking)
+  const estimated_cleaning_cost = 0
+  const estimated_listing_fee = 0
+  const estimated_transport_cost = 0
+  const expected_profit =
+    estimated_resale_average -
+    askingPrice -
+    estimated_cleaning_cost -
+    estimated_listing_fee -
+    estimated_transport_cost
+
+  const confidence_score = Math.max(
+    5,
+    Math.min(
+      100,
+      Math.round(
+        (brand ? 35 : 10) +
+          (model ? 20 : 5) +
+          (askingPrice > 0 ? 15 : 5) +
+          (lead.pickup_available || lead.local_delivery_available ? 15 : 0) +
+          (conditionGrade === 'good' || conditionGrade === 'very good' ? 15 : 5),
+      ),
+    ),
+  )
+
+  return {
+    estimated_resale_low: round2(estimated_resale_low),
+    estimated_resale_high: round2(estimated_resale_high),
+    estimated_resale_average: round2(estimated_resale_average),
+    suggested_max_buy_price: round2(suggested_max_buy_price),
+    suggested_first_offer: round2(suggested_first_offer),
+    expected_profit: round2(expected_profit),
+    confidence_score,
+  }
+}
+
+export function isLocalPickupDeal(
+  lead: Pick<
+    GolfLeadRadar,
+    'shipping_required' | 'pickup_available' | 'local_delivery_available' | 'distance_miles' | 'estimated_drive_minutes'
+  > & {
+    maxDriveMinutes?: number
+    maxRadiusMiles?: number
+    inZone?: boolean
+  },
+) {
+  if (lead.shipping_required) return false
+  if (!lead.inZone) return false
+
+  const maxDriveMinutes = lead.maxDriveMinutes ?? 60
+  const maxRadiusMiles = lead.maxRadiusMiles ?? 50
+  if (lead.distance_miles > maxRadiusMiles) return false
+  if (lead.estimated_drive_minutes > maxDriveMinutes) return false
+
+  return Boolean(lead.pickup_available || lead.local_delivery_available)
+}
+
+export function classifyDealLabel(score: number): string {
+  if (score >= 85) return 'Strong Buy'
+  if (score >= 70) return 'Good Lead'
+  if (score >= 55) return 'Maybe / Research More'
+  if (score >= 40) return 'Weak Deal'
+  return 'Avoid'
+}
+
+export function classifyPickupDifficulty(distanceMiles: number, driveMinutes: number): 'Easy' | 'Medium' | 'Hard' {
+  if (distanceMiles <= 15 && driveMinutes <= 30) return 'Easy'
+  if (distanceMiles <= 35 && driveMinutes <= 60) return 'Medium'
+  return 'Hard'
+}
+
+export function getZoneMatch(location: string, locations: SourcingLocation[]) {
+  const normalized = location.toLowerCase()
+  return locations.some((entry) => entry.location_name.toLowerCase().includes(normalized))
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100
 }
