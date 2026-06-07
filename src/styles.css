@@ -51,36 +51,6 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-:root[data-theme='classic-green-gold'] {
-  --color-primary: #0b1f36;
-  --color-primary-soft: #132f4c;
-  --color-primary-light: #235380;
-  --color-accent: #2b6cb0;
-  --color-accent-hover: #1f5ea2;
-  --color-accent-soft: #d9ebff;
-  --color-accent-border: #8cb7e4;
-  --color-page-bg: #061427;
-  --color-panel-bg: #0b1f36;
-  --color-panel-soft: #102a46;
-  --color-sidebar-bg: #071a2d;
-  --color-sidebar-bg-2: #0c2540;
-  --color-text-main: #e8f1fb;
-  --color-text-muted: #9db1c7;
-  --color-text-light: #ffffff;
-  --color-text-soft: #d8e3ee;
-  --color-border: #214262;
-  --color-border-soft: #1a3a5b;
-  --color-field-bg: rgba(255, 255, 255, 0.08);
-  --color-field-bg-focus: rgba(255, 255, 255, 0.12);
-  --shadow-soft: 0 10px 28px rgba(1, 11, 24, 0.35);
-  --shadow-card: 0 6px 18px rgba(1, 11, 24, 0.3);
-  --color-success: #16a34a;
-  --color-success-hover: #15803d;
-  --color-warning: #2b6cb0;
-  --color-danger: #c94040;
-  --color-info: #5a9add;
-}
-
 * {
   box-sizing: border-box;
 }

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { AppSettings, DashboardStats, PageKey } from '../types'
+import type { DashboardStats, PageKey } from '../types'
 import { Sidebar } from './Sidebar'
 
 interface LayoutProps {
@@ -9,8 +9,6 @@ interface LayoutProps {
   pageTitle: string
   pageDescription: string
   businessName: string
-  currentTheme: AppSettings['themePreference']
-  onToggleTheme: () => void
   stats: DashboardStats
   onQuickAdd: () => void
   children: ReactNode
@@ -22,8 +20,6 @@ export function Layout({
   pageTitle,
   pageDescription,
   businessName,
-  currentTheme,
-  onToggleTheme,
   stats,
   onQuickAdd,
   children,
@@ -67,9 +63,6 @@ export function Layout({
           </div>
           <div className="header-actions">
             <div className="score-pill">Today's Sourcing Score: {sourcingScore}</div>
-            <button className="btn" onClick={onToggleTheme}>
-              {currentTheme === 'premium-navy-amber' ? 'Use Local Theme' : 'Use Premium Theme'}
-            </button>
             <button className="quick-btn" onClick={onQuickAdd}>
               Quick Add Club
             </button>

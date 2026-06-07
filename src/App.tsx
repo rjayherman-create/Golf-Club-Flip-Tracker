@@ -160,16 +160,25 @@ function dedupeRadarLeads(leads: GolfLeadRadar[]): GolfLeadRadar[] {
   return deduped
 }
 
+function enforcePremiumTheme(settings: AppSettings): AppSettings {
+  return {
+    ...settings,
+    themePreference: 'premium-navy-amber',
+  }
+}
+
 function App() {
   const [route, setRoute] = useState<AppRoute>(() => getRouteFromPath(window.location.pathname))
   const [leads, setLeads] = useState<Lead[]>(() => loadLocal('gft.leads', sampleLeads))
   const [inventory, setInventory] = useState<InventoryItem[]>(() => loadLocal('gft.inventory', sampleInventory))
   const [sales, setSales] = useState<Sale[]>(() => loadLocal('gft.sales', sampleSales))
   const [sources, setSources] = useState<Source[]>(() => loadLocal('gft.sources', sampleSources))
-  const [settings, setSettings] = useState<AppSettings>(() => ({
-    ...defaultSettings,
-    ...loadLocal<Partial<AppSettings>>('gft.settings', defaultSettings),
-  }))
+  const [settings, setSettings] = useState<AppSettings>(() =>
+    enforcePremiumTheme({
+      ...defaultSettings,
+      ...loadLocal<Partial<AppSettings>>('gft.settings', defaultSettings),
+    }),
+  )
 
   const [sourcingSources, setSourcingSources] = useState<SourcingSource[]>(() =>
     loadLocal('gft.sourcing.sources', sourcingSourceSeeds),
@@ -207,8 +216,8 @@ function App() {
   useEffect(() => localStorage.setItem('gft.sourcing.settings', JSON.stringify(sourcingSettings)), [sourcingSettings])
 
   useEffect(() => {
-    document.documentElement.dataset.theme = settings.themePreference
-  }, [settings.themePreference])
+    document.documentElement.dataset.theme = 'premium-navy-amber'
+  }, [])
 
   useEffect(() => {
     const onPopState = () => setRoute(getRouteFromPath(window.location.pathname))
@@ -249,6 +258,7 @@ function App() {
             ...defaultSettings,
             ...prev,
             ...remote.settings,
+            themePreference: 'premium-navy-amber',
           }))
         }
         if (remote.sourcing_sources) setSourcingSources(remote.sourcing_sources)
@@ -323,16 +333,6 @@ function App() {
       followupsDueToday: leadFollowups.filter((followup) => followup.due_date === today && !followup.completed).length,
     }
   }, [golfLeads, leadFollowups])
-
-  function toggleThemePreference() {
-    setSettings((prev) => ({
-      ...prev,
-      themePreference:
-        prev.themePreference === 'premium-navy-amber'
-          ? 'classic-green-gold'
-          : 'premium-navy-amber',
-    }))
-  }
 
   const pageTitle: Record<PageKey, string> = {
     dashboard: 'Dashboard',
@@ -605,7 +605,7 @@ function App() {
       case 'value-guide':
         return <ValueGuide />
       case 'settings':
-        return <Settings settings={settings} onSave={setSettings} />
+        return <Settings settings={settings} onSave={(next) => setSettings(enforcePremiumTheme(next))} />
       case 'terms':
         return (
           <TermsOfService
@@ -653,8 +653,6 @@ function App() {
       pageTitle={pageTitle[route.page]}
       pageDescription={pageDescription[route.page]}
       businessName={settings.businessName}
-      currentTheme={settings.themePreference}
-      onToggleTheme={toggleThemePreference}
       stats={stats}
       onQuickAdd={() => navigatePage('lead-form')}
     >

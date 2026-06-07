@@ -164,7 +164,7 @@ export interface Source {
 }
 
 export interface AppSettings {
-  themePreference: 'premium-navy-amber' | 'classic-green-gold'
+  themePreference: 'premium-navy-amber'
   legalLastUpdated: string
   legalContactEmail: string
   userName: string

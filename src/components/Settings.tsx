@@ -18,21 +18,6 @@ export function Settings({ settings, onSave }: SettingsProps) {
     <section className="card form-grid">
       <h3>Settings</h3>
       <label>
-        Theme
-        <select
-          value={draft.themePreference}
-          onChange={(e) =>
-            setDraft((prev) => ({
-              ...prev,
-              themePreference: e.target.value as AppSettings['themePreference'],
-            }))
-          }
-        >
-          <option value="premium-navy-amber">Production: Premium Navy + Amber</option>
-          <option value="classic-green-gold">Local: Classic Green + Gold</option>
-        </select>
-      </label>
-      <label>
         Legal last updated
         <input
           type="date"
@@ -144,7 +129,7 @@ export function Settings({ settings, onSave }: SettingsProps) {
           onChange={(e) => setNumber('preferredMinimumProfit', e.target.value)}
         />
       </label>
-      <button className="btn btn-primary" onClick={() => onSave(draft)}>
+      <button className="btn btn-primary" onClick={() => onSave({ ...draft, themePreference: 'premium-navy-amber' })}>
         Save Settings
       </button>
       <div className="row-wrap span-2">
