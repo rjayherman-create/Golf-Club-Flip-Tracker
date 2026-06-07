@@ -195,7 +195,7 @@ export function Dashboard({
               <h4>Quick Add Deal</h4>
               <p className="muted-copy">Fill this in from the dashboard, then send it straight into analysis.</p>
             </div>
-            <button className="btn" type="button" onClick={onAddLead}>
+            <button className="btn btn-outline" type="button" onClick={onAddLead}>
               Open Full Form
             </button>
           </div>
@@ -237,10 +237,10 @@ export function Dashboard({
               <textarea rows={3} value={quickLead.notes} onChange={(event) => updateQuickLead('notes', event.target.value)} />
             </label>
             <div className="span-2 row-wrap">
-              <button className="btn btn-primary" type="submit">
+              <button className="btn btn-success" type="submit">
                 Save Deal
               </button>
-              <button className="btn" type="button" onClick={() => setQuickAddOpen(false)}>
+              <button className="btn btn-outline" type="button" onClick={() => setQuickAddOpen(false)}>
                 Hide Quick Form
               </button>
             </div>
@@ -279,7 +279,7 @@ export function Dashboard({
           <button className="btn btn-primary" onClick={onOpenSourcing}>
             Open Source Finder
           </button>
-          <button className="btn btn-secondary" onClick={() => void onFetchDeals()} disabled={fetchingDeals}>
+          <button className="btn btn-info" onClick={() => void onFetchDeals()} disabled={fetchingDeals}>
             {fetchingDeals ? 'Fetching Deals...' : 'Fetch Deals Now'}
           </button>
         </div>

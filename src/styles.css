@@ -1,35 +1,38 @@
 :root {
   --color-primary: #0b1f36;
   --color-primary-soft: #132f4c;
-  --color-primary-light: #1f4166;
-  --color-accent: #e87500;
-  --color-accent-hover: #c95f00;
-  --color-accent-soft: #fff3e4;
-  --color-accent-border: #f2b36b;
-  --color-page-bg: #f4f7fa;
-  --color-panel-bg: #ffffff;
-  --color-panel-soft: #f8fafc;
+  --color-primary-light: #235380;
+  --color-accent: #2b6cb0;
+  --color-accent-hover: #1f5ea2;
+  --color-accent-soft: #d9ebff;
+  --color-accent-border: #8cb7e4;
+  --color-page-bg: #061427;
+  --color-panel-bg: #0b1f36;
+  --color-panel-soft: #102a46;
   --color-sidebar-bg: #071a2d;
   --color-sidebar-bg-2: #0c2540;
-  --color-text-main: #102033;
-  --color-text-muted: #5c6b7a;
+  --color-text-main: #e8f1fb;
+  --color-text-muted: #9db1c7;
   --color-text-light: #ffffff;
   --color-text-soft: #d8e3ee;
-  --color-border: #d8e1ea;
-  --color-border-soft: #e8eef4;
-  --shadow-soft: 0 10px 28px rgba(15, 31, 52, 0.08);
-  --shadow-card: 0 6px 18px rgba(15, 31, 52, 0.07);
-  --color-success: #1d8f5f;
-  --color-warning: #e87500;
+  --color-border: #214262;
+  --color-border-soft: #1a3a5b;
+  --color-field-bg: rgba(255, 255, 255, 0.08);
+  --color-field-bg-focus: rgba(255, 255, 255, 0.12);
+  --shadow-soft: 0 10px 28px rgba(1, 11, 24, 0.35);
+  --shadow-card: 0 6px 18px rgba(1, 11, 24, 0.3);
+  --color-success: #16a34a;
+  --color-success-hover: #15803d;
+  --color-warning: #2b6cb0;
   --color-danger: #c94040;
-  --color-info: #2f6fa5;
+  --color-info: #5a9add;
 
   /* aliases for existing classes */
   --bg: var(--color-page-bg);
   --panel: var(--color-panel-bg);
   --panel-2: var(--color-panel-soft);
   --green: var(--color-success);
-  --green-soft: #dcfce7;
+  --green-soft: #d9ebff;
   --gold: var(--color-warning);
   --blue: var(--color-info);
   --danger: var(--color-danger);
@@ -49,30 +52,33 @@
 }
 
 :root[data-theme='classic-green-gold'] {
-  --color-primary: #0f3b2e;
-  --color-primary-soft: #165341;
-  --color-primary-light: #23705a;
-  --color-accent: #c7921a;
-  --color-accent-hover: #a87407;
-  --color-accent-soft: #fff6df;
-  --color-accent-border: #e1be63;
-  --color-page-bg: #f2f7f2;
-  --color-panel-bg: #ffffff;
-  --color-panel-soft: #f8fbf8;
-  --color-sidebar-bg: #0b2b22;
-  --color-sidebar-bg-2: #144234;
-  --color-text-main: #10261f;
-  --color-text-muted: #52655f;
+  --color-primary: #0b1f36;
+  --color-primary-soft: #132f4c;
+  --color-primary-light: #235380;
+  --color-accent: #2b6cb0;
+  --color-accent-hover: #1f5ea2;
+  --color-accent-soft: #d9ebff;
+  --color-accent-border: #8cb7e4;
+  --color-page-bg: #061427;
+  --color-panel-bg: #0b1f36;
+  --color-panel-soft: #102a46;
+  --color-sidebar-bg: #071a2d;
+  --color-sidebar-bg-2: #0c2540;
+  --color-text-main: #e8f1fb;
+  --color-text-muted: #9db1c7;
   --color-text-light: #ffffff;
-  --color-text-soft: #d6e8e2;
-  --color-border: #cedfd7;
-  --color-border-soft: #dfece6;
-  --shadow-soft: 0 10px 28px rgba(10, 45, 35, 0.08);
-  --shadow-card: 0 6px 18px rgba(10, 45, 35, 0.07);
-  --color-success: #1f8a5a;
-  --color-warning: #c7921a;
-  --color-danger: #be4646;
-  --color-info: #2f6fa5;
+  --color-text-soft: #d8e3ee;
+  --color-border: #214262;
+  --color-border-soft: #1a3a5b;
+  --color-field-bg: rgba(255, 255, 255, 0.08);
+  --color-field-bg-focus: rgba(255, 255, 255, 0.12);
+  --shadow-soft: 0 10px 28px rgba(1, 11, 24, 0.35);
+  --shadow-card: 0 6px 18px rgba(1, 11, 24, 0.3);
+  --color-success: #16a34a;
+  --color-success-hover: #15803d;
+  --color-warning: #2b6cb0;
+  --color-danger: #c94040;
+  --color-info: #5a9add;
 }
 
 * {
@@ -348,7 +354,7 @@ input,
 select,
 textarea {
   width: 100%;
-  background: #ffffff;
+  background: var(--color-field-bg);
   color: var(--color-text-main);
   border: 1px solid var(--color-border);
   border-radius: 10px;
@@ -361,8 +367,19 @@ input:focus,
 select:focus,
 textarea:focus {
   outline: none;
+  background: var(--color-field-bg-focus);
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px rgba(232, 117, 0, 0.16);
+  box-shadow: 0 0 0 3px rgba(43, 108, 176, 0.2);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--color-text-muted);
+}
+
+select option {
+  background: var(--color-panel-bg);
+  color: var(--color-text-main);
 }
 
 textarea {
@@ -394,7 +411,7 @@ summary {
 }
 
 .btn {
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
   color: var(--color-text-main);
   border: 1px solid var(--color-border);
   border-radius: 10px;
@@ -405,6 +422,11 @@ summary {
 
 .btn:hover {
   filter: brightness(1.08);
+}
+
+.btn:disabled {
+  opacity: 0.72;
+  cursor: not-allowed;
 }
 
 .btn-primary {
@@ -429,10 +451,54 @@ summary {
   border-color: var(--color-primary-light);
 }
 
+.btn-success {
+  background: var(--color-success);
+  color: #ffffff;
+  border-color: var(--color-success);
+}
+
+.btn-success:hover {
+  background: var(--color-success-hover);
+  border-color: var(--color-success-hover);
+}
+
+.btn-info {
+  background: var(--color-info);
+  color: #ffffff;
+  border-color: var(--color-info);
+}
+
+.btn-info:hover {
+  background: #4c8ecc;
+  border-color: #4c8ecc;
+}
+
+.btn-warning {
+  background: #c48823;
+  color: #ffffff;
+  border-color: #c48823;
+}
+
+.btn-warning:hover {
+  background: #a56f16;
+  border-color: #a56f16;
+}
+
+.btn-outline {
+  background: transparent;
+  color: #cde4ff;
+  border-color: #4c8acc;
+}
+
+.btn-outline:hover {
+  background: rgba(76, 138, 204, 0.16);
+  border-color: #68a4e2;
+}
+
 .btn-gold {
-  background: linear-gradient(90deg, #f59e0b, #d97706);
-  border-color: rgba(245, 158, 11, 0.9);
-  color: #111827;
+  background: linear-gradient(90deg, #2f77bf, #1f5ea2);
+  border-color: rgba(79, 140, 208, 0.9);
+  color: #ffffff;
 }
 
 .btn-danger {
@@ -446,7 +512,7 @@ summary {
   padding: 6px 11px;
   background: rgba(148, 163, 184, 0.2);
   border: 1px solid rgba(148, 163, 184, 0.4);
-  color: #1f2933;
+  color: #d7e9fb;
   font-size: 0.75rem;
   font-weight: 700;
 }
@@ -454,7 +520,7 @@ summary {
 .badge-buy,
 .badge-buy-now,
 .profit {
-  color: #155e35;
+  color: #8ef2b1;
 }
 
 .badge-pass,
@@ -465,16 +531,16 @@ summary {
 .badge-buy,
 .badge-good,
 .badge-strong-buy {
-  border-color: rgba(21, 128, 61, 0.85);
-  background: rgba(187, 247, 208, 0.75);
+  border-color: rgba(22, 163, 74, 0.85);
+  background: rgba(20, 83, 45, 0.72);
 }
 
 .badge-warning,
 .badge-avoid-shipping,
 .badge-too-far {
-  border-color: rgba(180, 83, 9, 0.85);
-  background: rgba(254, 215, 170, 0.85);
-  color: #9a3412;
+  border-color: rgba(73, 132, 196, 0.85);
+  background: rgba(25, 74, 126, 0.72);
+  color: #d7ebff;
 }
 
 .badge-pass {
@@ -492,7 +558,7 @@ summary {
 .deal-card {
   border: 1px solid var(--border);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.04);
   color: var(--text);
   text-align: left;
   padding: 14px;
@@ -508,8 +574,8 @@ summary {
 .business-rule-banner {
   margin-top: 14px;
   border-radius: 14px;
-  border: 1px solid rgba(245, 158, 11, 0.45);
-  background: linear-gradient(90deg, rgba(245, 158, 11, 0.18), rgba(22, 163, 74, 0.12));
+  border: 1px solid rgba(76, 134, 196, 0.45);
+  background: linear-gradient(90deg, rgba(43, 108, 176, 0.22), rgba(31, 94, 162, 0.14));
   padding: 14px 16px;
   color: var(--text);
 }
@@ -517,8 +583,8 @@ summary {
 .business-rule-banner {
   margin-top: 14px;
   border-radius: 14px;
-  border: 1px solid rgba(245, 158, 11, 0.45);
-  background: linear-gradient(90deg, rgba(245, 158, 11, 0.18), rgba(22, 163, 74, 0.12));
+  border: 1px solid rgba(76, 134, 196, 0.45);
+  background: linear-gradient(90deg, rgba(43, 108, 176, 0.22), rgba(31, 94, 162, 0.14));
   padding: 14px 16px;
   color: var(--text);
 }
@@ -582,7 +648,7 @@ summary {
 .chip {
   border-radius: 999px;
   border: 1px solid var(--color-border);
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.06);
   color: var(--color-text-main);
   padding: 8px 10px;
   cursor: pointer;
@@ -786,7 +852,7 @@ th {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 8px;
-    background: rgba(255, 255, 255, 0.98);
+    background: rgba(8, 24, 43, 0.98);
     border: 1px solid var(--border);
     border-radius: 12px;
     padding: 8px;

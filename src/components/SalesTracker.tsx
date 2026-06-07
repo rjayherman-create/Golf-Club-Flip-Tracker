@@ -236,7 +236,7 @@ export function SalesTracker({ sales, inventory, onAddSale }: SalesTrackerProps)
               onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))}
             />
           </label>
-          <button className="btn btn-primary" type="submit">
+          <button className="btn btn-success" type="submit">
             Mark Sold
           </button>
         </form>

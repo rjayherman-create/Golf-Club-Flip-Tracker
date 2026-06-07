@@ -353,11 +353,11 @@ export function LeadAnalyzer({ leads, onUpdateLead, onMoveToInventory }: LeadAna
         <button className="btn" onClick={() => updateLead({ status: 'Watch' })}>
           Watch
         </button>
-        <button className="btn btn-secondary" onClick={() => updateLead({ status: 'Make Offer' })}>
+        <button className="btn btn-primary" onClick={() => updateLead({ status: 'Make Offer' })}>
           Make Offer
         </button>
         <button
-          className="btn btn-primary"
+          className="btn btn-success"
           onClick={() => {
             const purchased = calculateValuation({ ...selectedLead, status: 'Purchased' })
             onUpdateLead(purchased)
@@ -375,11 +375,11 @@ export function LeadAnalyzer({ leads, onUpdateLead, onMoveToInventory }: LeadAna
         <button className="btn" onClick={() => updateLead({ status: 'Watch' })}>
           Watch
         </button>
-        <button className="btn btn-secondary" onClick={() => updateLead({ status: 'Make Offer' })}>
+        <button className="btn btn-primary" onClick={() => updateLead({ status: 'Make Offer' })}>
           Offer
         </button>
         <button
-          className="btn btn-primary"
+          className="btn btn-success"
           onClick={() => {
             const purchased = calculateValuation({ ...selectedLead, status: 'Purchased' })
             onUpdateLead(purchased)

@@ -115,8 +115,8 @@ export function Inventory({ inventory, onUpdateInventory, onCreateFromBundle }: 
             <button className="btn" onClick={() => onUpdateInventory({ ...selectedItem, notes: `${selectedItem.notes}\nEdited ${new Date().toISOString()}`.trim() })}>Edit</button>
             <button className="btn" onClick={() => onUpdateInventory({ ...selectedItem, status: 'Ready to List' })}>Check Value</button>
             <button className="btn" onClick={() => onUpdateInventory({ ...selectedItem, status: 'Ready to List' })}>Create Listing</button>
-            <button className="btn btn-secondary" onClick={() => onUpdateInventory({ ...selectedItem, status: 'Listed' })}>Mark Listed</button>
-            <button className="btn btn-primary" onClick={() => onUpdateInventory({ ...selectedItem, status: 'Sold' })}>Mark Sold</button>
+            <button className="btn btn-primary" onClick={() => onUpdateInventory({ ...selectedItem, status: 'Listed' })}>Mark Listed</button>
+            <button className="btn btn-success" onClick={() => onUpdateInventory({ ...selectedItem, status: 'Sold' })}>Mark Sold</button>
             <button className="btn btn-danger" onClick={() => onUpdateInventory({ ...selectedItem, status: 'Archived' })}>Archive</button>
           </div>
         </section>
@@ -180,7 +180,7 @@ export function Inventory({ inventory, onUpdateInventory, onCreateFromBundle }: 
         </div>
 
         <button
-          className="btn btn-primary"
+          className="btn btn-success"
           onClick={() => {
             const today = new Date().toISOString().slice(0, 10)
             const created = allocations.map((row) => ({

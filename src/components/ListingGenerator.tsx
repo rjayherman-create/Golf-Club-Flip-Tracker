@@ -100,7 +100,7 @@ export function ListingGenerator({ inventory, onUpdateInventory }: ListingGenera
         <button className="btn" onClick={() => void navigator.clipboard.writeText(`${listing.description}\n\n${conditionNotes}`)}>
           Copy Description
         </button>
-        <button className="btn btn-secondary" onClick={() => onUpdateInventory({ ...selectedItem, status: 'Listed' })}>
+        <button className="btn btn-success" onClick={() => onUpdateInventory({ ...selectedItem, status: 'Listed' })}>
           Mark as Listed
         </button>
       </div>

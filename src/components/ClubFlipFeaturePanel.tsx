@@ -292,7 +292,7 @@ export function ClubFlipFeaturePanel({ onConfirmToValue }: ClubFlipFeaturePanelP
                   Open PGA Value Guide Search
                 </a>
               )}
-              <button className="btn btn-primary" onClick={addToInventory}>
+              <button className="btn btn-success" onClick={addToInventory}>
                 Add to Inventory
               </button>
             </div>

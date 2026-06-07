@@ -308,10 +308,10 @@ export function LeadForm({ onSave, settings }: LeadFormProps) {
       </section>
 
       <section className="row-wrap">
-        <button className="btn btn-primary" type="button" onClick={() => saveWith('inventory')}>
+        <button className="btn btn-success" type="button" onClick={() => saveWith('inventory')}>
           Save Club
         </button>
-        <button className="btn btn-secondary" type="button" onClick={() => saveWith('lead-analyzer')}>
+        <button className="btn btn-primary" type="button" onClick={() => saveWith('lead-analyzer')}>
           Save and Check Value
         </button>
         <button className="btn" type="button" onClick={() => saveWith('listings')}>

@@ -634,10 +634,10 @@ export function LocalSourcingRadar({
               focuses on local pickup and local delivery only.
           </p>
           <div className="row-wrap">
-            <button className="btn btn-primary" onClick={() => onNavigate('/sourcing/add-facebook')}>
+            <button className="btn btn-success" onClick={() => onNavigate('/sourcing/add-facebook')}>
               Find Clubs & Bags
             </button>
-            <button className="btn btn-secondary" onClick={() => onNavigate('/sourcing/craigslist')}>
+            <button className="btn btn-info" onClick={() => onNavigate('/sourcing/craigslist')}>
               Radar Scan
             </button>
           </div>
@@ -674,7 +674,7 @@ export function LocalSourcingRadar({
               <p className="muted-copy">Step 1</p>
               <strong>{noPhotoLeads.length} leads missing photos</strong>
               <p>Get seller photos before any purchase decision.</p>
-              <button className="btn btn-secondary" type="button" onClick={() => setQuickFilter('no-photo')}>
+              <button className="btn btn-primary" type="button" onClick={() => setQuickFilter('no-photo')}>
                 Review no-photo leads
               </button>
             </article>
@@ -690,7 +690,7 @@ export function LocalSourcingRadar({
               <p className="muted-copy">Step 3</p>
               <strong>{strongBuyOpenLeads.length} active strong buys</strong>
               <p>Prioritize best-margin opportunities first.</p>
-              <button className="btn btn-primary" type="button" onClick={() => setQuickFilter('strong-buy')}>
+              <button className="btn btn-success" type="button" onClick={() => setQuickFilter('strong-buy')}>
                 Focus strong buys
               </button>
             </article>
@@ -1385,11 +1385,11 @@ export function LocalSourcingRadar({
   return (
     <div className="stack-lg">
       <section className="row-wrap">
-        <button className="btn" onClick={() => onNavigate('/sourcing')}>Dashboard</button>
-        <button className="btn" onClick={() => onNavigate('/sourcing/add-facebook')}>Add Facebook</button>
-        <button className="btn" onClick={() => onNavigate('/sourcing/craigslist')}>Craigslist</button>
-        <button className="btn" onClick={() => onNavigate(`/sourcing/lead/${selectedLead?.id ?? ''}`)}>Lead Detail</button>
-        <button className="btn" onClick={() => onNavigate('/sourcing/settings')}>Settings</button>
+        <button className="btn btn-primary" onClick={() => onNavigate('/sourcing')}>Dashboard</button>
+        <button className="btn btn-success" onClick={() => onNavigate('/sourcing/add-facebook')}>Add Facebook</button>
+        <button className="btn btn-info" onClick={() => onNavigate('/sourcing/craigslist')}>Craigslist</button>
+        <button className="btn btn-secondary" onClick={() => onNavigate(`/sourcing/lead/${selectedLead?.id ?? ''}`)}>Lead Detail</button>
+        <button className="btn btn-outline" onClick={() => onNavigate('/sourcing/settings')}>Settings</button>
       </section>
       <section className="card">
         <p>
