@@ -1470,6 +1470,29 @@ th {
     justify-content: space-between;
   }
 
+  /* Touch-friendly button sizing on mobile */
+  .btn,
+  .menu-btn,
+  .quick-btn,
+  button {
+    min-height: 44px;
+    padding: 12px 16px;
+    font-size: 1rem;
+  }
+
+  .nav-btn {
+    min-height: 48px;
+    padding: 14px 12px;
+    font-size: 1rem;
+  }
+
+  .scan-page .primary-btn,
+  .scan-page .secondary-btn {
+    min-height: 48px;
+    padding: 16px 18px;
+    font-size: 1rem;
+  }
+
   .form-grid {
     grid-template-columns: 1fr;
   }
@@ -1503,14 +1526,17 @@ th {
   }
 
   .sticky-action-bar .btn {
-    padding: 10px 8px;
-    font-size: 0.8rem;
+    padding: 12px 8px;
+    font-size: 0.9rem;
+    min-height: 44px;
   }
 
   .context-help-btn {
     top: auto;
     bottom: 72px;
     right: 18px;
+    width: 44px;
+    height: 44px;
   }
 
   .context-help-card {
@@ -1523,5 +1549,55 @@ th {
   .help-center-card {
     right: 12px;
     width: calc(100vw - 24px);
+  }
+
+  /* Mobile-optimized scan page */
+  .scan-page {
+    padding: 16px;
+    gap: 18px;
+  }
+
+  .scan-page .scan-hero {
+    flex-direction: column;
+    padding: 20px;
+    gap: 18px;
+  }
+
+  .scan-page .scan-grid {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+
+  .scan-page .scan-card,
+  .scan-page .inventory-card,
+  .scan-page .listing-card {
+    padding: 18px;
+  }
+
+  .scan-page .inventory-table {
+    font-size: 0.9rem;
+  }
+
+  .scan-page .inventory-table th,
+  .scan-page .inventory-table td {
+    padding: 10px 8px;
+  }
+
+  .scan-page .price-input input {
+    font-size: 18px;
+    padding: 12px;
+  }
+
+  .scan-page .upload-box {
+    padding: 20px;
+  }
+
+  .scan-page .photo-preview-grid {
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: 10px;
+  }
+
+  .scan-page .photo-preview-grid img {
+    height: 100px;
   }
 }
