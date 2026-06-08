@@ -311,13 +311,13 @@ function extractFacebookTitleAndLocation(html) {
   }
 
   const cleaned = pageTitle.replace(/\s+/g, ' ').trim()
-  const normalized = cleaned.replace(/\s*\|\s*Facebook(?: Marketplace)?\s*\|\s*Facebook\s*$/i, '')
+  const normalized = cleaned.replace(/\s*\|\s*Facebook[\s\S]*$/i, '')
   const parts = normalized.split(' - ').map((part) => part.trim()).filter(Boolean)
 
   if (parts.length >= 3) {
     return {
       listingTitle: parts[0],
-      locationText: parts[2],
+      locationText: parts[parts.length - 1],
     }
   }
 

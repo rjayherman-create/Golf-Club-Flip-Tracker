@@ -115,6 +115,10 @@ function getFacebookItemId(url: string) {
   return match?.[1] ?? ''
 }
 
+function getSuggestedMaxBuy(lead: GolfLeadRadar) {
+  return Math.max(0, Math.min(lead.estimated_resale_low * 0.45, lead.estimated_resale_average * 0.6))
+}
+
 function getPrimaryContactUrl(lead: GolfLeadRadar) {
   if (hasExternalUrl(lead.seller_contact_optional)) {
     return lead.seller_contact_optional.trim()
@@ -1033,6 +1037,7 @@ export function LocalSourcingRadar({
                         <span className="badge">FB item #{getFacebookItemId(lead.source_url)}</span>
                       )}
                       <span className="badge">Pickup {pickupDifficulty}</span>
+                      <span className="badge">Buy max {currency(getSuggestedMaxBuy(lead))}</span>
                       {lead.pickup_available && <span className="badge">Pickup Only</span>}
                       {lead.local_delivery_available && <span className="badge">Local Delivery</span>}
                       {lead.shipping_required && <span className="badge badge-pass">Avoid Shipping</span>}
@@ -1218,9 +1223,20 @@ export function LocalSourcingRadar({
               <div className="stack-sm">
                 {lastImportedLeads.map((lead) => (
                   <div key={lead.id} className="card">
+                    {lead.image_urls.length > 0 ? (
+                      <img
+                        src={lead.image_urls[0]}
+                        alt={lead.title}
+                        style={{ width: '100%', height: '180px', objectFit: 'cover', borderRadius: '10px', marginBottom: '8px' }}
+                      />
+                    ) : (
+                      <div className="muted-copy" style={{ marginBottom: '8px' }}>No photo was captured from Facebook; open the original listing to verify images.</div>
+                    )}
                     <strong>{lead.title}</strong>
                     <p>{lead.source_name}</p>
+                    <p>City/Town: {lead.location_text}</p>
                     <p className="muted-copy">{lead.source_url}</p>
+                    <p>Suggested max buy: {currency(getSuggestedMaxBuy(lead))}</p>
                     <div className="row-wrap">
                       <button className="btn btn-primary" type="button" onClick={() => onNavigate(`/sourcing/lead/${lead.id}`)}>
                         Open lead
@@ -1351,6 +1367,7 @@ export function LocalSourcingRadar({
             <div>
               <h3>{currentLead.title}</h3>
               <p>{currentLead.source_name}</p>
+              <p className="muted-copy">City/Town: {currentLead.location_text}</p>
               {getFacebookItemId(currentLead.source_url) && (
                 <p className="muted-copy">Facebook item ID: {getFacebookItemId(currentLead.source_url)}</p>
               )}
