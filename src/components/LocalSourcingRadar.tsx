@@ -25,7 +25,20 @@ interface LocalSourcingRadarProps {
   locations: SourcingLocation[]
   settings: SourcingRadarSettings
   onFetchDeals: () => Promise<GolfLeadRadar[]>
-  onImportFacebookListings: (urls: string[], sourceId: string) => Promise<GolfLeadRadar[]>
+  onImportFacebookListings: (
+    urls: string[],
+    sourceId: string,
+  ) => Promise<{
+    imported: GolfLeadRadar[]
+    summary: {
+      requested: number
+      imported: number
+      skipped: number
+      duplicateSkipped: number
+      unverifiedSkipped: number
+      onlyRealData: boolean
+    }
+  }>
   onNavigate: (path: string) => void
   onSaveLead: (lead: GolfLeadRadar, items?: GolfLeadItem[], followups?: LeadFollowup[]) => void
   onUpdateLead: (lead: GolfLeadRadar) => void
@@ -92,6 +105,16 @@ function hasExternalUrl(value: string) {
   return /^https?:\/\//i.test(value.trim())
 }
 
+function isRealListingLead(lead: GolfLeadRadar) {
+  const url = String(lead.source_url ?? '').toLowerCase()
+  return hasExternalUrl(url) && /(facebook\.com|craigslist\.org)/.test(url)
+}
+
+function getFacebookItemId(url: string) {
+  const match = String(url ?? '').match(/facebook\.com\/marketplace\/item\/(\d+)/i)
+  return match?.[1] ?? ''
+}
+
 function getPrimaryContactUrl(lead: GolfLeadRadar) {
   if (hasExternalUrl(lead.seller_contact_optional)) {
     return lead.seller_contact_optional.trim()
@@ -123,14 +146,16 @@ function getLeadPhotos(lead: GolfLeadRadar) {
     'placeholder.com',
   ]
 
-  return lead.image_urls.filter((url) => {
-    const trimmed = url.trim()
+  return lead.image_urls
+    .map((url) => String(url ?? '').replace(/&amp;/g, '&').trim())
+    .filter((url) => {
+      const trimmed = url.trim()
     if (!/^https?:\/\//i.test(trimmed)) return false
     const lower = trimmed.toLowerCase()
     if (blockedHosts.some((host) => lower.includes(host))) return false
     if (/landscape|mountain|nature|hero|banner/.test(lower)) return false
     return true
-  })
+    })
 }
 
 function hasNoOriginalPhotos(lead: GolfLeadRadar) {
@@ -290,6 +315,15 @@ export function LocalSourcingRadar({
   const [facebookSelectedUrls, setFacebookSelectedUrls] = useState('')
   const [facebookImporting, setFacebookImporting] = useState(false)
   const [facebookImportMessage, setFacebookImportMessage] = useState('')
+  const [lastImportedLeads, setLastImportedLeads] = useState<GolfLeadRadar[]>([])
+  const [lastImportSummary, setLastImportSummary] = useState<{
+    requested: number
+    imported: number
+    skipped: number
+    duplicateSkipped: number
+    unverifiedSkipped: number
+    onlyRealData: boolean
+  } | null>(null)
   const [facebookForm, setFacebookForm] = useState({
     sourceId: sources[0]?.id ?? '',
     sourceUrl: '',
@@ -339,6 +373,13 @@ export function LocalSourcingRadar({
 
   const strongBuys = useMemo(
     () => eligibleLeads.filter((lead) => lead.deal_label === 'Strong Buy'),
+    [eligibleLeads],
+  )
+  const recentlyAddedLeads = useMemo(
+    () =>
+      [...eligibleLeads]
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .slice(0, 6),
     [eligibleLeads],
   )
   const todaysLeads = useMemo(() => {
@@ -562,9 +603,15 @@ export function LocalSourcingRadar({
     setFacebookImportMessage('Importing selected Facebook listings...')
 
     try {
-      const imported = await onImportFacebookListings(urls, facebookForm.sourceId)
+      const result = await onImportFacebookListings(urls, facebookForm.sourceId)
+      const imported = result.imported
+      setLastImportedLeads(imported)
+      setLastImportSummary(result.summary)
+
       if (imported.length === 0) {
-        setFacebookImportMessage('No new Facebook deals were imported. Check URLs or try different listings.')
+        setFacebookImportMessage(
+          `No verified real listings were imported. Skipped ${result.summary.skipped}. Try public listing URLs with visible title/price/photos.`,
+        )
         return
       }
 
@@ -581,9 +628,10 @@ export function LocalSourcingRadar({
         onSaveLead(lead, [], [followup])
       }
 
-      setFacebookImportMessage(`Imported ${imported.length} real Facebook listing${imported.length > 1 ? 's' : ''}.`)
+      setFacebookImportMessage(
+        `Autoload complete: ${result.summary.imported} real listing${result.summary.imported > 1 ? 's' : ''} imported, ${result.summary.skipped} skipped.`,
+      )
       setFacebookSelectedUrls('')
-      onNavigate(`/sourcing/lead/${imported[0].id}`)
     } finally {
       setFacebookImporting(false)
     }
@@ -836,6 +884,10 @@ export function LocalSourcingRadar({
                   <p className="muted-copy">Next: {getLeadNextStep(lead)}</p>
                   <p className="muted-copy">Updated {formatDateTime(lead.updated_at)}</p>
                   <div className="row-wrap">
+                      {isRealListingLead(lead) && <span className="badge badge-good">Real listing URL</span>}
+                      {getFacebookItemId(lead.source_url) && (
+                        <span className="badge">FB item #{getFacebookItemId(lead.source_url)}</span>
+                      )}
                     {lead.pickup_available && <span className="badge">Pickup Only</span>}
                     {lead.local_delivery_available && <span className="badge">Local Delivery</span>}
                     {lead.shipping_required && <span className="badge badge-pass">Avoid Shipping</span>}
@@ -864,6 +916,27 @@ export function LocalSourcingRadar({
                 </div>
               )
             })}
+          </div>
+        </section>
+
+        <section className="card">
+          <h4>Recently Added Leads</h4>
+          <p className="muted-copy">Newest imported leads appear here first so you can review what was just added.</p>
+          <div className="stack-sm">
+            {recentlyAddedLeads.map((lead) => (
+              <button key={lead.id} className="deal-card compact" onClick={() => onNavigate(`/sourcing/lead/${lead.id}`)}>
+                <strong>{lead.title}</strong>
+                <p>{lead.source_name}</p>
+                <p className="muted-copy">Added {formatDateTime(lead.created_at)}</p>
+                <div className="row-wrap">
+                  {isRealListingLead(lead) && <span className="badge badge-good">Real listing URL</span>}
+                  {getFacebookItemId(lead.source_url) && (
+                    <span className="badge">FB item #{getFacebookItemId(lead.source_url)}</span>
+                  )}
+                  <span className="badge">{lead.deal_label}</span>
+                </div>
+              </button>
+            ))}
           </div>
         </section>
 
@@ -931,6 +1004,10 @@ export function LocalSourcingRadar({
                     <p className="muted-copy">Next: {getLeadNextStep(lead)}</p>
                     <p className="muted-copy">Updated {formatDateTime(lead.updated_at)}</p>
                     <div className="row-wrap">
+                      {isRealListingLead(lead) && <span className="badge badge-good">Real listing URL</span>}
+                      {getFacebookItemId(lead.source_url) && (
+                        <span className="badge">FB item #{getFacebookItemId(lead.source_url)}</span>
+                      )}
                       <span className="badge">Pickup {pickupDifficulty}</span>
                       {lead.pickup_available && <span className="badge">Pickup Only</span>}
                       {lead.local_delivery_available && <span className="badge">Local Delivery</span>}
@@ -984,6 +1061,7 @@ export function LocalSourcingRadar({
       <section className="card form-grid">
         <h3>Manual Facebook Marketplace Import</h3>
           <p className="span-2">Compliant workflow: copy listing details from Facebook Marketplace only. No automated scraping.</p>
+          <p className="span-2 muted-copy">Autoload now accepts only verified real listing data. Placeholder/unverified pages are skipped automatically.</p>
         <label className="span-2">
           Selected Facebook listing URLs (one per line)
           <textarea
@@ -1077,6 +1155,49 @@ export function LocalSourcingRadar({
           </div>
           <p className="muted-copy">Risk notes: verify exact model, request close-up photos, and confirm pickup before committing.</p>
         </section>
+
+        {lastImportSummary && (
+          <section className="card span-2">
+            <h4>Autoload Results (Real Data Only)</h4>
+            <div className="chip-grid" style={{ marginBottom: '10px' }}>
+              <span className="badge">Requested: {lastImportSummary.requested}</span>
+              <span className="badge badge-good">Imported: {lastImportSummary.imported}</span>
+              <span className="badge">Skipped: {lastImportSummary.skipped}</span>
+              <span className="badge">Duplicate skipped: {lastImportSummary.duplicateSkipped}</span>
+              <span className="badge">Unverified skipped: {lastImportSummary.unverifiedSkipped}</span>
+            </div>
+
+            {lastImportedLeads.length > 0 ? (
+              <div className="stack-sm">
+                {lastImportedLeads.map((lead) => (
+                  <div key={lead.id} className="card">
+                    <strong>{lead.title}</strong>
+                    <p>{lead.source_name}</p>
+                    <p className="muted-copy">{lead.source_url}</p>
+                    <div className="row-wrap">
+                      <button className="btn btn-primary" type="button" onClick={() => onNavigate(`/sourcing/lead/${lead.id}`)}>
+                        Open lead
+                      </button>
+                      {hasExternalUrl(lead.source_url) && (
+                        <a className="btn btn-secondary" href={lead.source_url} target="_blank" rel="noreferrer">
+                          Open original listing
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="muted-copy">No verified listings were added in the last import attempt.</p>
+            )}
+
+            <div className="row-wrap" style={{ marginTop: '8px' }}>
+              <button className="btn" type="button" onClick={() => onNavigate('/sourcing')}>
+                View added leads in Source Deals
+              </button>
+            </div>
+          </section>
+        )}
       </section>
     )
   }
@@ -1189,6 +1310,9 @@ export function LocalSourcingRadar({
             <div>
               <h3>{currentLead.title}</h3>
               <p>{currentLead.source_name}</p>
+              {getFacebookItemId(currentLead.source_url) && (
+                <p className="muted-copy">Facebook item ID: {getFacebookItemId(currentLead.source_url)}</p>
+              )}
               <p className="muted-copy">Created {formatDateTime(currentLead.created_at)}</p>
               <p className="muted-copy">Last update {formatDateTime(currentLead.updated_at)}</p>
               <p className="muted-copy">Last checked {formatDateTime(currentLead.last_checked_at)}</p>

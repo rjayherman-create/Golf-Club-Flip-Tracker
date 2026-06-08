@@ -661,8 +661,33 @@ function App() {
     }
   }
 
-  async function importFacebookListings(urls: string[], sourceId: string): Promise<GolfLeadRadar[]> {
-    if (urls.length === 0) return []
+  async function importFacebookListings(
+    urls: string[],
+    sourceId: string,
+  ): Promise<{
+    imported: GolfLeadRadar[]
+    summary: {
+      requested: number
+      imported: number
+      skipped: number
+      duplicateSkipped: number
+      unverifiedSkipped: number
+      onlyRealData: boolean
+    }
+  }> {
+    if (urls.length === 0) {
+      return {
+        imported: [],
+        summary: {
+          requested: 0,
+          imported: 0,
+          skipped: 0,
+          duplicateSkipped: 0,
+          unverifiedSkipped: 0,
+          onlyRealData: true,
+        },
+      }
+    }
 
     try {
       const response = await fetch(`${apiBase}/api/import-facebook-listings`, {
@@ -677,10 +702,42 @@ function App() {
         throw new Error('Unable to import Facebook listings')
       }
 
-      const result = (await response.json()) as Partial<{ imported: GolfLeadRadar[] }>
-      return Array.isArray(result.imported) ? result.imported : []
+      const result = (await response.json()) as Partial<{
+        imported: GolfLeadRadar[]
+        summary: {
+          requested: number
+          imported: number
+          skipped: number
+          duplicateSkipped: number
+          unverifiedSkipped: number
+          onlyRealData: boolean
+        }
+      }>
+
+      const imported = Array.isArray(result.imported) ? result.imported : []
+      return {
+        imported,
+        summary: {
+          requested: result.summary?.requested ?? urls.length,
+          imported: result.summary?.imported ?? imported.length,
+          skipped: result.summary?.skipped ?? Math.max(0, urls.length - imported.length),
+          duplicateSkipped: result.summary?.duplicateSkipped ?? 0,
+          unverifiedSkipped: result.summary?.unverifiedSkipped ?? 0,
+          onlyRealData: result.summary?.onlyRealData ?? true,
+        },
+      }
     } catch {
-      return []
+      return {
+        imported: [],
+        summary: {
+          requested: urls.length,
+          imported: 0,
+          skipped: urls.length,
+          duplicateSkipped: 0,
+          unverifiedSkipped: urls.length,
+          onlyRealData: true,
+        },
+      }
     }
   }
 

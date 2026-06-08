@@ -298,6 +298,32 @@ function parseCraigslistArea(title) {
   return areaMatch ? areaMatch[1].trim() : ''
 }
 
+function parseCityStateText(value) {
+  const match = String(value ?? '').match(/([A-Za-z .'-]+,\s*(?:New York|NY))/i)
+  return match ? match[1].trim() : ''
+}
+
+function extractFacebookTitleAndLocation(html) {
+  const titleTagMatch = String(html ?? '').match(/<title[^>]*>([\s\S]*?)<\/title>/i)
+  const pageTitle = stripHtml(titleTagMatch?.[1] ?? '')
+  if (!pageTitle) {
+    return { listingTitle: '', locationText: '' }
+  }
+
+  const cleaned = pageTitle.replace(/\s+/g, ' ').trim()
+  const normalized = cleaned.replace(/\s*\|\s*Facebook(?: Marketplace)?\s*\|\s*Facebook\s*$/i, '')
+  const parts = normalized.split(' - ').map((part) => part.trim()).filter(Boolean)
+
+  if (parts.length >= 3) {
+    return {
+      listingTitle: parts[0],
+      locationText: parts[2],
+    }
+  }
+
+  return { listingTitle: parts[0] ?? normalized, locationText: '' }
+}
+
 function inferClubType(text) {
   const value = String(text ?? '').toLowerCase()
   if (/iron\s*set|\birons\b|\b4-pw\b/.test(value)) return 'iron_set'
@@ -690,11 +716,13 @@ async function buildFacebookImportedLeads(db, urls, sourceId) {
   )
 
   const leads = []
+  let unverifiedSkipped = 0
 
   for (const listingUrl of normalizedUrls.slice(0, 20)) {
     let title = 'Facebook Marketplace listing'
     let description = 'Imported from manually selected Facebook listing URL.'
     let imageUrls = []
+    let hasFetchedMetadata = false
 
     try {
       const response = await fetch(listingUrl, {
@@ -709,25 +737,50 @@ async function buildFacebookImportedLeads(db, urls, sourceId) {
         const html = await response.text()
         const ogTitle = extractMetaContent(html, 'og:title')
         const ogDescription = extractMetaContent(html, 'og:description')
-        title = stripHtml(ogTitle || title)
+        const parsedTitle = extractFacebookTitleAndLocation(html)
+        title = stripHtml(ogTitle || parsedTitle.listingTitle || title)
         description = stripHtml(ogDescription || description)
         imageUrls = dedupeUrls([
           ...extractMetaImageUrls(html),
           ...extractImgSrcUrls(html).slice(0, 12),
         ]).filter(looksLikeAdImage)
+        hasFetchedMetadata = Boolean(ogTitle || ogDescription || imageUrls.length)
+
+        if (parsedTitle.locationText) {
+          description = `${description} ${parsedTitle.locationText}`.trim()
+        }
       }
     } catch {
       // Keep minimal listing data when fetch cannot read page metadata.
     }
 
     const askingPrice = parseCraigslistPrice(title, description)
-    const locationText = parseCraigslistArea(title) || 'Local pickup area'
+    const locationText =
+      parseCraigslistArea(title) ||
+      parseCityStateText(title) ||
+      parseCraigslistArea(description) ||
+      parseCityStateText(description) ||
+      'Local pickup area'
     const county = inferCounty(locationText)
     const { distance_miles, estimated_drive_minutes } = inferDistanceAndDriveMinutes(county)
     const mergedText = `${title} ${description}`
     const brand = inferBrand(mergedText, settings)
     const model = inferModel(title, brand)
     const clubType = inferClubType(mergedText)
+
+    const hasMeaningfulTitle = title !== 'Facebook Marketplace listing'
+    const hasMeaningfulDescription = description !== 'Imported from manually selected Facebook listing URL.'
+    const hasMeaningfulListingData = hasMeaningfulTitle || hasMeaningfulDescription || imageUrls.length > 0
+    const hasGolfSignal =
+      /golf|driver|putter|wedge|iron|hybrid|fairway|club|bag|set/i.test(mergedText) ||
+      brand !== 'Unknown' ||
+      clubType !== 'unknown' ||
+      askingPrice > 0
+
+    if (!hasFetchedMetadata || !hasMeaningfulListingData || !hasGolfSignal) {
+      unverifiedSkipped += 1
+      continue
+    }
 
     const template = {
       id: crypto.randomUUID(),
@@ -769,7 +822,13 @@ async function buildFacebookImportedLeads(db, urls, sourceId) {
     leads.push(await hydrateLeadImageUrls(lead))
   }
 
-  return leads
+  return {
+    leads,
+    summary: {
+      requested: normalizedUrls.slice(0, 20).length,
+      unverifiedSkipped,
+    },
+  }
 }
 
 function normalizeLeadKey(lead) {
@@ -826,10 +885,10 @@ function looksLikeAdImage(urlText) {
 
 function extractMetaImageUrls(html) {
   const matches = []
-  const metaRegex = /<meta[^>]+(?:property|name|itemprop)=["'](?:og:image|og:image:url|twitter:image|twitter:image:src|image)["'][^>]*content=["']([^"']+)["'][^>]*>/gi
+  const metaRegex = /<meta[^>]+(?:property|name|itemprop)=["'](?:og:image|og:image:url|og:image:secure_url|twitter:image|twitter:image:src|image)["'][^>]*content=["']([^"']+)["'][^>]*>/gi
   let match = metaRegex.exec(html)
   while (match) {
-    matches.push(match[1])
+    matches.push(decodeHtmlEntities(match[1]))
     match = metaRegex.exec(html)
   }
   return matches
@@ -850,7 +909,7 @@ function extractImgSrcUrls(html) {
   const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi
   let match = imgRegex.exec(html)
   while (match) {
-    matches.push(match[1])
+    matches.push(decodeHtmlEntities(match[1]))
     match = imgRegex.exec(html)
   }
   return matches
@@ -1336,7 +1395,8 @@ const server = http.createServer(async (req, res) => {
       return
     }
 
-    const imported = await buildFacebookImportedLeads(db, urls, sourceId)
+    const importResult = await buildFacebookImportedLeads(db, urls, sourceId)
+    const imported = importResult.leads
     const existingKeys = new Set((db.golf_leads ?? []).map((lead) => normalizeLeadKey(lead)))
     const uniqueImported = imported.filter((lead) => {
       const key = normalizeLeadKey(lead)
@@ -1374,12 +1434,25 @@ const server = http.createServer(async (req, res) => {
     db.lead_followups = [...importedFollowups, ...(db.lead_followups ?? [])]
 
     await writeDb(db)
+    const duplicateSkipped = Math.max(0, imported.length - uniqueImported.length)
+    const unverifiedSkipped = Number(importResult.summary?.unverifiedSkipped ?? 0)
+    const requested = Number(importResult.summary?.requested ?? urls.length)
+    const skipped = Math.max(0, requested - uniqueImported.length)
+
     sendJson(res, 200, {
       ok: true,
       imported: uniqueImported,
       items: importedItems,
       followups: importedFollowups,
-      skipped: Math.max(0, urls.length - uniqueImported.length),
+      skipped,
+      summary: {
+        requested,
+        imported: uniqueImported.length,
+        skipped,
+        duplicateSkipped,
+        unverifiedSkipped,
+        onlyRealData: true,
+      },
     })
     return
   }
