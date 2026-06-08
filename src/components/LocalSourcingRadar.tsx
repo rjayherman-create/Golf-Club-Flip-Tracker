@@ -385,7 +385,6 @@ export function LocalSourcingRadar({
     () => sources.filter((source) => source.source_type !== 'facebook_manual' && source.enabled),
     [sources],
   )
-  const scanSources = useMemo(() => sources.filter((source) => source.enabled), [sources])
 
   const strongBuys = useMemo(
     () => eligibleLeads.filter((lead) => lead.deal_label === 'Strong Buy'),
@@ -758,11 +757,14 @@ export function LocalSourcingRadar({
           </p>
           <div className="row-wrap">
             <button className="btn btn-success" onClick={() => onNavigate('/sourcing/add-facebook')}>
-              Find Clubs & Bags
+              Paste Facebook URL
             </button>
             <button className="btn btn-info" onClick={() => onNavigate('/sourcing/craigslist')}>
-              Radar Scan
+              Craigslist Scan
             </button>
+          </div>
+          <div className="business-rule-banner" style={{ marginTop: '10px' }}>
+            <strong>Facebook import:</strong> paste a real Marketplace item URL on the next screen. <strong>Craigslist scan:</strong> searches live public Craigslist sources.
           </div>
           <div className="business-rule-banner">
             <strong>Source finder:</strong> Facebook Marketplace and Craigslist only. No shipping-only opportunities.
@@ -1075,6 +1077,7 @@ export function LocalSourcingRadar({
         <h3>Facebook URL Autoload (Recommended)</h3>
         <p className="span-2">Compliant workflow: copy listing details from Facebook Marketplace only. No automated scraping.</p>
         <p className="span-2 muted-copy">Only this is required: paste URL and click Autoload Selected URLs. Everything below is optional manual entry.</p>
+        <p className="span-2 muted-copy">This page does not scan by itself. It only imports the Facebook URL(s) you paste below.</p>
         <section className="card span-2">
           <h4>Quick steps</h4>
           <ol className="plain-list">
@@ -1244,14 +1247,7 @@ export function LocalSourcingRadar({
         <section className="card form-grid">
           <h3>Facebook Marketplace + Craigslist Connector</h3>
           <p className="span-2">Search now auto-adds deals only from Facebook Marketplace and Craigslist. Shipping-only deals are excluded automatically.</p>
-          <label>
-            Source selector
-            <select value={craigslistForm.sourceId} onChange={(event) => setCraigslistForm((prev) => ({ ...prev, sourceId: event.target.value }))}>
-                {scanSources.map((source) => (
-                <option key={source.id} value={source.id}>{source.source_name}</option>
-              ))}
-            </select>
-          </label>
+          <p className="muted-copy span-2">This scan ignores manual source selection and searches all enabled public sources automatically.</p>
           <label>
             County / region
             <select value={craigslistForm.county} onChange={(event) => setCraigslistForm((prev) => ({ ...prev, county: event.target.value }))}>
