@@ -324,6 +324,52 @@ function extractFacebookTitleAndLocation(html) {
   return { listingTitle: parts[0] ?? normalized, locationText: '' }
 }
 
+function parseFacebookPasteContext(rawText) {
+  const text = String(rawText ?? '').replace(/\r/g, '\n')
+  if (!text.trim()) {
+    return { title: '', description: '', locationText: '', askingPrice: 0 }
+  }
+
+  const lines = text
+    .split('\n')
+    .map((line) => stripHtml(line).replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+
+  const title =
+    lines.find(
+      (line) =>
+        !/^https?:\/\//i.test(line) &&
+        !/^\$\d+/i.test(line) &&
+        !/^details$/i.test(line) &&
+        !/^condition$/i.test(line) &&
+        !/^listed\b/i.test(line) &&
+        !/facebook marketplace/i.test(line) &&
+        /golf|club|driver|iron|wedge|putter|bag|set|nike|callaway|titleist|ping|taylormade|mizuno|cobra|odyssey|pxg|srixon/i.test(line),
+    ) || lines[0] || ''
+
+  const askingPrice = parseCraigslistPrice(text)
+  const locationText =
+    text.match(/Listed\s+\d+\s+\w+\s+ago\s+in\s+(.+?)(?:\n|$)/i)?.[1]?.trim() ||
+    text.match(/(?:in|\()\s*([A-Za-z .'-]+,\s*(?:New York|NY))\b/i)?.[1]?.trim() ||
+    ''
+
+  const detailsIndex = lines.findIndex((line) => /^details$/i.test(line))
+  const urlIndex = lines.findIndex((line) => /^https?:\/\//i.test(line))
+  const descriptionLines =
+    detailsIndex >= 0
+      ? lines.slice(detailsIndex + 1, urlIndex >= 0 ? urlIndex : undefined)
+      : lines.slice(1, urlIndex >= 0 ? urlIndex : undefined)
+
+  const description = descriptionLines.join(' ').trim()
+
+  return {
+    title: stripHtml(title),
+    description,
+    locationText: stripHtml(locationText),
+    askingPrice,
+  }
+}
+
 function inferClubType(text) {
   const value = String(text ?? '').toLowerCase()
   if (/iron\s*set|\birons\b|\b4-pw\b/.test(value)) return 'iron_set'
@@ -702,7 +748,7 @@ async function buildDealTemplates(db) {
   return Promise.all(valued.map((lead) => hydrateLeadImageUrls(lead)))
 }
 
-async function buildFacebookImportedLeads(db, urls, sourceId) {
+async function buildFacebookImportedLeads(db, urls, sourceId, rawText = '') {
   const source =
     (db.sourcing_sources ?? []).find(
       (item) => item.id === sourceId && item.source_type === 'facebook_manual',
@@ -711,6 +757,7 @@ async function buildFacebookImportedLeads(db, urls, sourceId) {
 
   const settings = db.sourcing_settings ?? {}
   const now = new Date().toISOString()
+  const pastedContext = parseFacebookPasteContext(rawText)
   const normalizedUrls = dedupeUrls(Array.isArray(urls) ? urls : []).filter((urlText) =>
     /facebook\.com\/(marketplace|share)/i.test(urlText),
   )
@@ -719,8 +766,8 @@ async function buildFacebookImportedLeads(db, urls, sourceId) {
   let unverifiedSkipped = 0
 
   for (const listingUrl of normalizedUrls.slice(0, 20)) {
-    let title = 'Facebook Marketplace listing'
-    let description = 'Imported from manually selected Facebook listing URL.'
+    let title = pastedContext.title || 'Facebook Marketplace listing'
+    let description = pastedContext.description || 'Imported from manually selected Facebook listing URL.'
     let imageUrls = []
     let hasFetchedMetadata = false
     let listingReachable = false
@@ -740,7 +787,7 @@ async function buildFacebookImportedLeads(db, urls, sourceId) {
         const ogTitle = extractMetaContent(html, 'og:title')
         const ogDescription = extractMetaContent(html, 'og:description')
         const parsedTitle = extractFacebookTitleAndLocation(html)
-        title = stripHtml(ogTitle || parsedTitle.listingTitle || title)
+        title = stripHtml(ogTitle || pastedContext.title || parsedTitle.listingTitle || title)
         description = stripHtml(ogDescription || description)
         imageUrls = dedupeUrls([
           ...extractMetaImageUrls(html),
@@ -748,16 +795,18 @@ async function buildFacebookImportedLeads(db, urls, sourceId) {
         ]).filter(looksLikeAdImage)
         hasFetchedMetadata = Boolean(ogTitle || ogDescription || imageUrls.length)
 
-        if (parsedTitle.locationText) {
-          description = `${description} ${parsedTitle.locationText}`.trim()
+        const metadataLocation = pastedContext.locationText || parsedTitle.locationText
+        if (metadataLocation) {
+          description = `${description} ${metadataLocation}`.trim()
         }
       }
     } catch {
       // Keep minimal listing data when fetch cannot read page metadata.
     }
 
-    const askingPrice = parseCraigslistPrice(title, description)
+    const askingPrice = pastedContext.askingPrice || parseCraigslistPrice(title, description)
     const locationText =
+      pastedContext.locationText ||
       parseCraigslistArea(title) ||
       parseCityStateText(title) ||
       parseCraigslistArea(description) ||
@@ -1400,13 +1449,14 @@ const server = http.createServer(async (req, res) => {
     const body = await parseBody(req)
     const urls = Array.isArray(body?.urls) ? body.urls : []
     const sourceId = typeof body?.sourceId === 'string' ? body.sourceId : ''
+    const rawText = typeof body?.rawText === 'string' ? body.rawText : ''
 
     if (urls.length === 0) {
       sendJson(res, 400, { error: 'No listing URLs provided' })
       return
     }
 
-    const importResult = await buildFacebookImportedLeads(db, urls, sourceId)
+    const importResult = await buildFacebookImportedLeads(db, urls, sourceId, rawText)
     const imported = importResult.leads
     const existingKeys = new Set((db.golf_leads ?? []).map((lead) => normalizeLeadKey(lead)))
     const uniqueImported = imported.filter((lead) => {

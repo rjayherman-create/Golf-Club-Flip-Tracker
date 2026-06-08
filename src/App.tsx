@@ -726,6 +726,7 @@ function App() {
   async function importFacebookListings(
     urls: string[],
     sourceId: string,
+    rawText = '',
   ): Promise<{
     imported: GolfLeadRadar[]
     summary: {
@@ -757,7 +758,7 @@ function App() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ urls, sourceId }),
+        body: JSON.stringify({ urls, sourceId, rawText }),
       })
 
       if (!response.ok) {

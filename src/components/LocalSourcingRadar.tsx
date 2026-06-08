@@ -28,6 +28,7 @@ interface LocalSourcingRadarProps {
   onImportFacebookListings: (
     urls: string[],
     sourceId: string,
+    rawText?: string,
   ) => Promise<{
     imported: GolfLeadRadar[]
     summary: {
@@ -241,7 +242,7 @@ function DealPhotoCarousel({ lead }: { lead: GolfLeadRadar }) {
       <img
         src={current}
         alt={lead.title}
-        style={{ width: '100%', height: '160px', objectFit: 'cover', borderRadius: '10px' }}
+        style={{ width: '100%', height: '240px', objectFit: 'cover', borderRadius: '10px' }}
       />
       {photos.length > 1 && (
         <div className="row-wrap" style={{ marginTop: '6px' }}>
@@ -620,7 +621,7 @@ export function LocalSourcingRadar({
     setFacebookImportMessage('Importing selected Facebook listings...')
 
     try {
-      const result = await onImportFacebookListings(urls, facebookForm.sourceId)
+      const result = await onImportFacebookListings(urls, facebookForm.sourceId, facebookSelectedUrls)
       const imported = result.imported
       setLastImportedLeads(imported)
       setLastImportSummary(result.summary)
@@ -1318,8 +1319,10 @@ export function LocalSourcingRadar({
               <div key={lead.id} className="deal-card" onClick={() => onNavigate(`/sourcing/lead/${lead.id}`)} role="button" tabIndex={0}>
                 <DealPhotoCarousel lead={lead} />
                 <strong>{lead.title}</strong>
-                <p>{lead.location_text}</p>
+                <p>City/Town: {lead.location_text}</p>
+                <p>{lead.source_name}</p>
                 <p>{lead.status === 'sold' ? 'Already Sold' : lead.deal_label}</p>
+                <p>Suggested max buy: {currency(getSuggestedMaxBuy(lead))}</p>
                 <p className="muted-copy">Found {formatDateTime(lead.created_at)}</p>
                 <div className="row-wrap" style={{ marginTop: '8px' }}>
                   {lead.status !== 'sold' && hasExternalUrl(getPrimaryContactUrl(lead)) && (
