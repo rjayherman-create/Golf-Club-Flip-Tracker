@@ -1,17 +1,72 @@
-import { useMemo, useState } from 'react'
-import { buildFacebookListingText } from '../lib/clubValue'
-import type {
-  ClubCondition,
-  ClubIdentification,
-  ClubInventoryItem,
-  ClubValueEstimate,
-} from '../types/clubFlip'
+import { useEffect, useMemo, useState } from 'react'
 
-const conditions: ClubCondition[] = ['Like New', 'Excellent', 'Very Good', 'Good', 'Fair', 'Poor']
+type ClubCondition = 'poor' | 'fair' | 'good' | 'very_good'
 
-function money(value?: number | null) {
-  if (value == null || Number.isNaN(value)) return '-'
-  return `$${Math.round(value)}`
+type ScannedClub = {
+  id: string
+  brand: string
+  model: string
+  clubType: string
+  loftOrNumber?: string
+  shaft?: string
+  confidence: number
+  condition: ClubCondition
+  estimatedLow: number
+  estimatedHigh: number
+  notes: string
+}
+
+type DealSummary = {
+  askingPrice: number
+  targetBuyPrice: number
+  estimatedLotLow: number
+  estimatedLotHigh: number
+  estimatedBreakoutLow: number
+  estimatedBreakoutHigh: number
+  recommendation: 'BUY' | 'NEGOTIATE' | 'PASS'
+}
+
+type ClubOcrResponse = {
+  identification?: {
+    brand: string
+    model: string
+    clubType: string
+    loft?: string
+    shaftBrand?: string
+    shaftFlex?: string
+    handedness?: 'Right' | 'Left' | 'Unknown'
+    conditionGuess?: 'New' | 'Like New' | 'Excellent' | 'Very Good' | 'Good' | 'Fair' | 'Poor'
+    visibleNotes?: string[]
+    confidence: number
+    searchQuery: string
+  }
+  warning?: string
+  error?: string
+}
+
+const CONDITION_LABELS: Record<ClubCondition, string> = {
+  poor: 'Poor',
+  fair: 'Fair',
+  good: 'Good',
+  very_good: 'Very Good',
+}
+
+const CLUB_VALUE_BY_TYPE: Record<string, { low: number; high: number }> = {
+  driver: { low: 12, high: 28 },
+  'driver / wood': { low: 10, high: 22 },
+  'fairway wood': { low: 10, high: 20 },
+  hybrid: { low: 12, high: 24 },
+  iron: { low: 5, high: 14 },
+  wedge: { low: 8, high: 18 },
+  putter: { low: 8, high: 20 },
+  bag: { low: 20, high: 45 },
+  set: { low: 35, high: 85 },
+  'iron set pieces': { low: 4, high: 10 },
+  unknown: { low: 5, high: 15 },
+}
+
+function money(value: number) {
+  return `$${value.toLocaleString()}`
 }
 
 function readFileAsDataUrl(file: File) {
@@ -23,342 +78,456 @@ function readFileAsDataUrl(file: File) {
   })
 }
 
-interface ClubFlipFeaturePanelProps {
+function calculateRecommendation(
+  askingPrice: number,
+  estimatedLotLow: number,
+  estimatedLotHigh: number,
+): DealSummary['recommendation'] {
+  const midpoint = (estimatedLotLow + estimatedLotHigh) / 2
+
+  if (askingPrice <= midpoint * 0.4) return 'BUY'
+  if (askingPrice <= midpoint * 0.65) return 'NEGOTIATE'
+  return 'PASS'
+}
+
+function normalizeCondition(value?: string): ClubCondition {
+  switch (value) {
+    case 'Poor':
+    case 'poor':
+      return 'poor'
+    case 'Fair':
+    case 'fair':
+      return 'fair'
+    case 'Good':
+    case 'good':
+      return 'good'
+    case 'Very Good':
+    case 'very_good':
+    case 'Very good':
+      return 'very_good'
+    default:
+      return 'good'
+  }
+}
+
+function estimateClubRange(clubType: string, condition: ClubCondition) {
+  const key = clubType.trim().toLowerCase()
+  const base = CLUB_VALUE_BY_TYPE[key] ?? CLUB_VALUE_BY_TYPE.unknown
+  const conditionMultiplier = {
+    poor: 0.72,
+    fair: 0.88,
+    good: 1,
+    very_good: 1.12,
+  }[condition]
+
+  return {
+    low: Math.max(1, Math.round(base.low * conditionMultiplier)),
+    high: Math.max(2, Math.round(base.high * conditionMultiplier)),
+  }
+}
+
+function buildScannedClub(identification: NonNullable<ClubOcrResponse['identification']>, index: number): ScannedClub {
+  const condition = normalizeCondition(identification.conditionGuess)
+  const estimated = estimateClubRange(identification.clubType, condition)
+
+  return {
+    id: crypto.randomUUID(),
+    brand: identification.brand || 'Unknown',
+    model: identification.model || `Photo ${index + 1}`,
+    clubType: identification.clubType || 'Unknown',
+    loftOrNumber: identification.loft || '',
+    shaft:
+      [identification.shaftBrand, identification.shaftFlex].filter(Boolean).join(' ') || undefined,
+    confidence: Math.max(0, Math.min(100, Math.round((identification.confidence || 0) * 100))),
+    condition,
+    estimatedLow: estimated.low,
+    estimatedHigh: estimated.high,
+    notes: (identification.visibleNotes || []).join(' ') || 'AI scan result from uploaded photo.',
+  }
+}
+
+type ClubFlipFeaturePanelProps = {
   onConfirmToValue?: () => void
 }
 
 export function ClubFlipFeaturePanel({ onConfirmToValue }: ClubFlipFeaturePanelProps) {
   const apiBase = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:3001'
-  const [photo, setPhoto] = useState<File | null>(null)
-  const [headPhoto, setHeadPhoto] = useState<File | null>(null)
-  const [solePhoto, setSolePhoto] = useState<File | null>(null)
-  const [shaftPhoto, setShaftPhoto] = useState<File | null>(null)
-  const [gripPhoto, setGripPhoto] = useState<File | null>(null)
-  const [photoPreview, setPhotoPreview] = useState('')
-  const [identification, setIdentification] = useState<ClubIdentification | null>(null)
-  const [condition, setCondition] = useState<ClubCondition>('Good')
-  const [purchasePrice, setPurchasePrice] = useState('')
-  const [pickupArea, setPickupArea] = useState(import.meta.env.VITE_DEFAULT_MARKET || 'Long Island / NYC / Westchester')
-  const [estimate, setEstimate] = useState<ClubValueEstimate | null>(null)
-  const [links, setLinks] = useState<{ ebaySoldManualSearch?: string; pgaValueGuideSearch?: string } | null>(null)
-  const [inventory, setInventory] = useState<ClubInventoryItem[]>([])
-  const [loading, setLoading] = useState('')
-  const [error, setError] = useState('')
+  const [photos, setPhotos] = useState<File[]>([])
+  const [clubs, setClubs] = useState<ScannedClub[]>([])
+  const [askingPrice, setAskingPrice] = useState<number>(40)
+  const [isScanning, setIsScanning] = useState(false)
+  const [savedMessage, setSavedMessage] = useState('')
 
-  const facebookText = useMemo(() => {
-    if (!identification) return { title: '', body: '' }
-    return buildFacebookListingText({
-      brand: identification.brand,
-      model: identification.model,
-      clubType: identification.clubType,
-      loft: identification.loft,
-      shaftBrand: identification.shaftBrand,
-      shaftFlex: identification.shaftFlex,
-      handedness: identification.handedness,
-      condition,
-      price: estimate?.recommendedListPrice || undefined,
-      pickupArea,
-      notes: identification.visibleNotes?.join('; '),
-    })
-  }, [identification, condition, estimate, pickupArea])
+  const photoPreviews = useMemo(() => photos.map((file) => URL.createObjectURL(file)), [photos])
 
-  function onPhotoChange(file: File | null) {
-    setPhoto(file)
-    setIdentification(null)
-    setEstimate(null)
-    setLinks(null)
-    setError('')
-    setPhotoPreview(file ? URL.createObjectURL(file) : '')
+  useEffect(() => {
+    return () => {
+      photoPreviews.forEach((src) => URL.revokeObjectURL(src))
+    }
+  }, [photoPreviews])
+
+  const estimatedBreakoutLow = clubs.reduce((sum, club) => sum + club.estimatedLow, 0)
+  const estimatedBreakoutHigh = clubs.reduce((sum, club) => sum + club.estimatedHigh, 0)
+
+  const estimatedLotLow = clubs.length ? Math.round(estimatedBreakoutLow * 0.65) : 0
+  const estimatedLotHigh = clubs.length ? Math.round(estimatedBreakoutHigh * 0.75) : 0
+
+  const targetBuyPrice = clubs.length ? Math.round(estimatedLotLow * 0.45) : 0
+
+  const recommendation = clubs.length
+    ? calculateRecommendation(askingPrice, estimatedLotLow, estimatedLotHigh)
+    : 'PASS'
+
+  function handlePhotoUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files || [])
+    setPhotos(files)
+    setClubs([])
+    setSavedMessage('')
   }
 
-  async function identifyClub() {
-    if (!photo) {
-      setError('Upload a club photo first.')
-      return
-    }
+  async function runDemoScan(modeLabel = 'Scan complete. Review and edit the detected clubs before saving.') {
+    setIsScanning(true)
+    setSavedMessage('')
 
-    setLoading('Identifying club from photo...')
-    setError('')
     try {
-      const photoDataUrl = await readFileAsDataUrl(photo)
-      const response = await fetch(`${apiBase}/api/club-ocr`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ photoDataUrl }),
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || 'Identification failed')
-      setIdentification(data.identification)
-      setCondition(data.identification.conditionGuess || 'Good')
-      if (data.warning) setError(data.warning)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Identification failed')
+      if (!photos.length) {
+        throw new Error('Upload at least one photo before scanning.')
+      }
+
+      const identifications = await Promise.all(
+        photos.map(async (photo) => {
+          const response = await fetch(`${apiBase}/api/club-ocr`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ photoDataUrl: await readFileAsDataUrl(photo) }),
+          })
+          const data = (await response.json()) as ClubOcrResponse
+          if (!response.ok) throw new Error(data.error || 'Identification failed')
+          return data
+        }),
+      )
+
+      const nextClubs = identifications
+        .map((entry, index) => {
+          if (!entry.identification) return null
+          return buildScannedClub(entry.identification, index)
+        })
+        .filter((club): club is ScannedClub => club != null)
+
+      setClubs(nextClubs)
+      setSavedMessage(
+        identifications.some((entry) => entry.warning)
+          ? 'Scan complete with fallback identification. Review the notes before saving.'
+          : modeLabel,
+      )
+    } catch (error) {
+      setClubs([])
+      setSavedMessage(error instanceof Error ? `Scan failed: ${error.message}` : 'Scan failed. Please try again.')
     } finally {
-      setLoading('')
+      setIsScanning(false)
     }
   }
 
-  async function lookupComps() {
-    if (!identification?.searchQuery) {
-      setError('Identify the club first or enter a search query.')
-      return
-    }
-
-    setLoading('Looking up sold comps...')
-    setError('')
-    try {
-      const response = await fetch(`${apiBase}/api/club-comps?q=${encodeURIComponent(identification.searchQuery)}`)
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || 'Comp lookup failed')
-      setEstimate(data.estimate)
-      setLinks(data.links)
-      if (data.warning) setError(data.warning)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Comp lookup failed')
-    } finally {
-      setLoading('')
-    }
+  function updateClub(id: string, field: keyof ScannedClub, value: string | number) {
+    setClubs((current) =>
+      current.map((club) =>
+        club.id === id
+          ? {
+              ...club,
+              [field]: value,
+            }
+          : club,
+      ),
+    )
   }
 
-  function addToInventory() {
-    if (!identification) return
-    const item: ClubInventoryItem = {
-      id: crypto.randomUUID(),
+  function removeClub(id: string) {
+    setClubs((current) => current.filter((club) => club.id !== id))
+  }
+
+  function addManualClub() {
+    setClubs((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        brand: '',
+        model: '',
+        clubType: 'Iron',
+        loftOrNumber: '',
+        shaft: '',
+        confidence: 100,
+        condition: 'fair',
+        estimatedLow: 5,
+        estimatedHigh: 10,
+        notes: '',
+      },
+    ])
+  }
+
+  function saveAnalysis() {
+    const payload = {
       createdAt: new Date().toISOString(),
-      photoUrl: photoPreview,
-      brand: identification.brand,
-      model: identification.model,
-      clubType: identification.clubType,
-      loft: identification.loft,
-      shaftBrand: identification.shaftBrand,
-      shaftFlex: identification.shaftFlex,
-      handedness: identification.handedness,
-      condition,
-      purchasePrice: purchasePrice ? Number(purchasePrice) : undefined,
-      estimatedValue: estimate?.median || undefined,
-      recommendedListPrice: estimate?.recommendedListPrice || undefined,
-      source: 'Manual / Photo Upload',
-      location: pickupArea,
-      notes: identification.visibleNotes?.join('; '),
+      askingPrice,
+      targetBuyPrice,
+      estimatedLotLow,
+      estimatedLotHigh,
+      estimatedBreakoutLow,
+      estimatedBreakoutHigh,
+      recommendation,
+      clubs,
     }
-    setInventory((prev) => [item, ...prev])
-  }
 
-  async function exportCsv() {
-    const response = await fetch(`${apiBase}/api/export-csv`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items: inventory }),
-    })
-    const blob = await response.blob()
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = 'golf-club-inventory.csv'
-    anchor.click()
-    URL.revokeObjectURL(url)
-  }
-
-  async function copyFacebookText() {
-    await navigator.clipboard.writeText(`TITLE:\n${facebookText.title}\n\nDESCRIPTION:\n${facebookText.body}`)
+    localStorage.setItem('latestClubPhotoScanAnalysis', JSON.stringify(payload, null, 2))
+    setSavedMessage('Analysis saved to this browser. Connect this to your deals database next.')
   }
 
   return (
-    <div className="stack-lg">
-      <section className="hero-card">
-        <h3>Identify From Photo</h3>
-        <p>Upload key photos, identify club details on the server, confirm/edit, then move into Value Checker.</p>
-        <div className="business-rule-banner">
-          <strong>Status:</strong> AI photo identification uses the local API. If `OPENAI_API_KEY` is not configured, the app returns a fallback result so the workflow can still be tested.
+    <section className="stack-lg scan-page">
+      <div className="scan-hero">
+        <div>
+          <p className="eyebrow">Photo Deal Scanner</p>
+          <h1>Scan golf club photos into inventory and resale prices</h1>
+          <p className="hero-copy">
+            Upload Facebook or Craigslist listing photos, identify visible clubs, estimate individual resale
+            value, and decide whether the lot is worth buying.
+          </p>
         </div>
-      </section>
 
-      <section className="card form-grid">
-        <h4>1. Photo Upload + Club ID</h4>
-        <label>
-          Club head photo
-          <input type="file" accept="image/*" onChange={(event) => setHeadPhoto(event.target.files?.[0] ?? null)} />
-        </label>
-        <label>
-          Sole photo
-          <input type="file" accept="image/*" onChange={(event) => setSolePhoto(event.target.files?.[0] ?? null)} />
-        </label>
-        <label>
-          Shaft label photo
-          <input type="file" accept="image/*" onChange={(event) => setShaftPhoto(event.target.files?.[0] ?? null)} />
-        </label>
-        <label>
-          Grip photo
-          <input type="file" accept="image/*" onChange={(event) => setGripPhoto(event.target.files?.[0] ?? null)} />
-        </label>
-        <label className="span-2">
-          Full club photo
-          <input type="file" accept="image/*" onChange={(event) => onPhotoChange(event.target.files?.[0] ?? null)} />
-        </label>
-        {photoPreview && (
-          <div className="span-2">
-            <img src={photoPreview} alt="Uploaded golf club" style={{ width: '100%', maxHeight: '340px', objectFit: 'contain', borderRadius: '12px' }} />
+        <div className={`deal-verdict ${recommendation.toLowerCase()}`}>
+          <span>Deal Verdict</span>
+          <strong>{clubs.length ? recommendation : 'WAITING'}</strong>
+        </div>
+      </div>
+
+      <div className="scan-grid">
+        <div className="scan-card card">
+          <h2>1. Upload listing photos</h2>
+          <p>
+            Best photos: club faces, soles, shafts, grips, bag, and full set from above.
+          </p>
+
+          <label className="upload-box">
+            <input type="file" accept="image/*" multiple onChange={handlePhotoUpload} />
+            <strong>Choose photos</strong>
+            <span>Upload 1–8 images from a local listing</span>
+          </label>
+
+          {photoPreviews.length > 0 && (
+            <div className="photo-preview-grid">
+              {photoPreviews.map((src, index) => (
+                <img key={src} src={src} alt={`Uploaded club photo ${index + 1}`} />
+              ))}
+            </div>
+          )}
+
+          <button className="primary-btn btn btn-primary" onClick={() => void runDemoScan()} disabled={isScanning}>
+            {isScanning ? 'Scanning photos...' : 'Scan Photos'}
+          </button>
+
+          <button className="secondary-btn btn btn-secondary" onClick={() => void runDemoScan('All bag photos scanned. Review the detected clubs before saving.')} disabled={isScanning}>
+            {isScanning ? 'Scanning all bag pics...' : 'Scan All Bag Pics'}
+          </button>
+
+          <p className="helper-note">
+            Use the bag scan button when you want every uploaded bag photo scanned together. Both buttons send the
+            uploaded photos to the server's OCR endpoint.
+          </p>
+        </div>
+
+        <div className="scan-card summary-card card">
+          <h2>2. Deal math</h2>
+
+          <label className="price-input">
+            Seller asking price
+            <input
+              type="number"
+              value={askingPrice}
+              onChange={(event) => setAskingPrice(Number(event.target.value))}
+              min={0}
+            />
+          </label>
+
+          <div className="summary-list">
+            <div>
+              <span>Estimated local lot value</span>
+              <strong>
+                {money(estimatedLotLow)} – {money(estimatedLotHigh)}
+              </strong>
+            </div>
+
+            <div>
+              <span>Breakout individual value</span>
+              <strong>
+                {money(estimatedBreakoutLow)} – {money(estimatedBreakoutHigh)}
+              </strong>
+            </div>
+
+            <div>
+              <span>Target buy price</span>
+              <strong>{money(targetBuyPrice)}</strong>
+            </div>
+
+            <div>
+              <span>Suggested listing price</span>
+              <strong>{clubs.length ? money(Math.round(estimatedLotHigh * 1.15)) : '$0'}</strong>
+            </div>
+          </div>
+
+          <div className="strategy-box">
+            <strong>Recommended strategy</strong>
+            <p>
+              {recommendation === 'BUY' &&
+                'Buy if the photos are accurate. Leave room for cleaning, slow-moving clubs, and negotiation.'}
+              {recommendation === 'NEGOTIATE' &&
+                'Only buy after negotiating down. This looks like a starter set, not a strong breakout inventory set.'}
+              {recommendation === 'PASS' &&
+                'Pass unless the seller drops the price or better hidden clubs are found in closer photos.'}
+            </p>
+          </div>
+
+          <div className="row-wrap">
+            <button className="secondary-btn btn btn-secondary" onClick={saveAnalysis} disabled={!clubs.length}>
+              Save Analysis
+            </button>
+            <button className="btn btn-outline" onClick={() => onConfirmToValue?.()}>
+              Open Value Checker
+            </button>
+          </div>
+
+          {savedMessage && <p className="saved-message">{savedMessage}</p>}
+        </div>
+      </div>
+
+      <div className="inventory-card card">
+        <div className="inventory-header">
+          <div>
+            <h2>3. Scanned inventory</h2>
+            <p>Edit anything the scan gets wrong before saving the deal.</p>
+          </div>
+
+          <button className="secondary-btn btn btn-secondary" onClick={addManualClub}>
+            Add Manual Club
+          </button>
+        </div>
+
+        {clubs.length === 0 ? (
+          <div className="empty-state">
+            Upload photos and press scan to generate the inventory.
+          </div>
+        ) : (
+          <div className="inventory-table-wrap table-wrap">
+            <table className="inventory-table">
+              <thead>
+                <tr>
+                  <th>Club</th>
+                  <th>Type</th>
+                  <th># / Loft</th>
+                  <th>Condition</th>
+                  <th>Value</th>
+                  <th>Confidence</th>
+                  <th>Notes</th>
+                  <th></th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {clubs.map((club) => (
+                  <tr key={club.id}>
+                    <td>
+                      <input
+                        value={club.brand}
+                        placeholder="Brand"
+                        onChange={(event) => updateClub(club.id, 'brand', event.target.value)}
+                      />
+                      <input
+                        value={club.model}
+                        placeholder="Model"
+                        onChange={(event) => updateClub(club.id, 'model', event.target.value)}
+                      />
+                    </td>
+
+                    <td>
+                      <input
+                        value={club.clubType}
+                        onChange={(event) => updateClub(club.id, 'clubType', event.target.value)}
+                      />
+                    </td>
+
+                    <td>
+                      <input
+                        value={club.loftOrNumber || ''}
+                        onChange={(event) => updateClub(club.id, 'loftOrNumber', event.target.value)}
+                      />
+                    </td>
+
+                    <td>
+                      <select
+                        value={club.condition}
+                        onChange={(event) => updateClub(club.id, 'condition', event.target.value as ClubCondition)}
+                      >
+                        {Object.entries(CONDITION_LABELS).map(([value, label]) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+
+                    <td>
+                      <div className="value-range">
+                        <input
+                          type="number"
+                          value={club.estimatedLow}
+                          onChange={(event) => updateClub(club.id, 'estimatedLow', Number(event.target.value))}
+                        />
+                        <span>to</span>
+                        <input
+                          type="number"
+                          value={club.estimatedHigh}
+                          onChange={(event) => updateClub(club.id, 'estimatedHigh', Number(event.target.value))}
+                        />
+                      </div>
+                    </td>
+
+                    <td>
+                      <span className="confidence-pill badge">{club.confidence}%</span>
+                    </td>
+
+                    <td>
+                      <textarea
+                        value={club.notes}
+                        onChange={(event) => updateClub(club.id, 'notes', event.target.value)}
+                      />
+                    </td>
+
+                    <td>
+                      <button className="delete-btn btn btn-danger" onClick={() => removeClub(club.id)}>
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
-        <div className="span-2 row-wrap">
-          <button className="btn btn-primary" onClick={() => void identifyClub()} disabled={Boolean(loading)}>
-            Identify Club
-          </button>
-          <span className="muted-copy">
-            Uploaded: {[headPhoto, solePhoto, shaftPhoto, gripPhoto, photo].filter(Boolean).length}/5
-          </span>
+      </div>
+
+      <div className="listing-card card">
+        <h2>4. Suggested resale listing</h2>
+
+        <div className="listing-box">
+          <strong>Used Golf Club Starter Set with Cart Bag — Mixed Irons, Woods, Putter</strong>
+          <p>
+            Used mixed golf club starter set with cart bag. Includes woods, irons, putter, and red/black golf bag.
+            Good for beginner, casual golfer, garage set, or extra backyard practice set. Clubs show normal cosmetic wear.
+          </p>
+          <p>
+            Suggested list price: <strong>{clubs.length ? money(Math.round(estimatedLotHigh * 1.15)) : '$0'}</strong> —
+            expected sale range: <strong>{money(estimatedLotLow)} – {money(estimatedLotHigh)}</strong>
+          </p>
         </div>
-
-        {identification && (
-          <>
-            <label>
-              Brand
-              <input value={identification.brand} onChange={(event) => setIdentification({ ...identification, brand: event.target.value })} />
-            </label>
-            <label>
-              Model
-              <input value={identification.model} onChange={(event) => setIdentification({ ...identification, model: event.target.value })} />
-            </label>
-            <label>
-              Type
-              <input value={identification.clubType} onChange={(event) => setIdentification({ ...identification, clubType: event.target.value })} />
-            </label>
-            <label>
-              Confidence
-              <input value={`${Math.round((identification.confidence || 0) * 100)}%`} readOnly />
-            </label>
-            <label>
-              Condition
-              <select value={condition} onChange={(event) => setCondition(event.target.value as ClubCondition)}>
-                {conditions.map((entry) => (
-                  <option key={entry}>{entry}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Purchase Price
-              <input type="number" value={purchasePrice} onChange={(event) => setPurchasePrice(event.target.value)} />
-            </label>
-            <label className="span-2">
-              Comp Search Query
-              <input
-                value={identification.searchQuery}
-                onChange={(event) => setIdentification({ ...identification, searchQuery: event.target.value })}
-              />
-            </label>
-            <div className="span-2 row-wrap">
-              <span className="badge badge-good">Detected fields are editable</span>
-              <button className="btn btn-primary" type="button" onClick={() => onConfirmToValue?.()}>
-                Confirm and Open Value Checker
-              </button>
-              <button className="btn btn-secondary" onClick={() => void lookupComps()} disabled={Boolean(loading)}>
-                Lookup eBay Sold Comps
-              </button>
-            </div>
-          </>
-        )}
-
-        {loading && <p className="span-2 muted-copy">{loading}</p>}
-        {error && <p className="span-2 muted-copy">{error}</p>}
-      </section>
-
-      <section className="card form-grid">
-        <h4>2. Value Estimate + PGA Lookup</h4>
-        {estimate ? (
-          <>
-            <label>
-              Sold Comp Count
-              <input value={String(estimate.compCount)} readOnly />
-            </label>
-            <label>
-              Median Sold
-              <input value={money(estimate.median)} readOnly />
-            </label>
-            <label>
-              Suggested List
-              <input value={money(estimate.recommendedListPrice)} readOnly />
-            </label>
-            <label>
-              Max Buy Price
-              <input value={money(estimate.recommendedBuyMax)} readOnly />
-            </label>
-            <div className="span-2 row-wrap">
-              {links?.ebaySoldManualSearch && (
-                <a className="btn" href={links.ebaySoldManualSearch} target="_blank" rel="noreferrer">
-                  Open eBay Sold Search
-                </a>
-              )}
-              {links?.pgaValueGuideSearch && (
-                <a className="btn" href={links.pgaValueGuideSearch} target="_blank" rel="noreferrer">
-                  Open PGA Value Guide Search
-                </a>
-              )}
-              <button className="btn btn-success" onClick={addToInventory}>
-                Add to Inventory
-              </button>
-            </div>
-          </>
-        ) : (
-          <p className="span-2 muted-copy">Identify a club and run sold comps to see pricing guidance.</p>
-        )}
-      </section>
-
-      <section className="card form-grid">
-        <h4>3. Facebook Listing Export</h4>
-        <label className="span-2">
-          Pickup Area
-          <input value={pickupArea} onChange={(event) => setPickupArea(event.target.value)} />
-        </label>
-        <label className="span-2">
-          Facebook Title
-          <input value={facebookText.title} readOnly />
-        </label>
-        <label className="span-2">
-          Facebook Description
-          <textarea rows={8} value={facebookText.body} readOnly />
-        </label>
-        <div className="span-2 row-wrap">
-          <button className="btn btn-secondary" onClick={() => void copyFacebookText()}>
-            Copy Facebook Listing
-          </button>
-        </div>
-      </section>
-
-      <section className="card">
-        <h4>4. Inventory + CSV Export</h4>
-        <div className="row-wrap" style={{ marginBottom: '12px' }}>
-          <button className="btn" onClick={() => void exportCsv()} disabled={!inventory.length}>
-            Export CSV
-          </button>
-        </div>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Club</th>
-                <th>Buy</th>
-                <th>List</th>
-                <th>Value</th>
-              </tr>
-            </thead>
-            <tbody>
-              {inventory.map((item) => (
-                <tr key={item.id}>
-                  <td>{item.brand} {item.model} {item.clubType}</td>
-                  <td>{money(item.purchasePrice)}</td>
-                  <td>{money(item.recommendedListPrice)}</td>
-                  <td>{money(item.estimatedValue)}</td>
-                </tr>
-              ))}
-              {!inventory.length && (
-                <tr>
-                  <td colSpan={4}>No inventory added yet.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </div>
+      </div>
+    </section>
   )
 }

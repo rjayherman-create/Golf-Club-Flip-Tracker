@@ -21,9 +21,14 @@ const navItems: NavItem[] = [
     activeFor: ['dashboard', 'sourcing-radar', 'sourcing-add-facebook', 'sourcing-craigslist', 'sourcing-lead', 'sourcing-settings'],
   },
   {
+    key: 'club-flip',
+    label: 'Photo Checker',
+    activeFor: ['club-flip'],
+  },
+  {
     key: 'lead-analyzer',
     label: 'Value Checker',
-    activeFor: ['lead-analyzer', 'lead-form', 'club-flip', 'value-guide'],
+    activeFor: ['lead-analyzer', 'lead-form', 'value-guide'],
   },
   {
     key: 'inventory',
