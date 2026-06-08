@@ -8,17 +8,38 @@ interface SidebarProps {
   variant?: 'desktop' | 'mobile'
 }
 
-const navItems: Array<{ key: PageKey; label: string }> = [
-  { key: 'dashboard', label: 'Dashboard' },
-  { key: 'sourcing-radar', label: 'Source Deals' },
-  { key: 'lead-form', label: 'Add Club' },
-  { key: 'club-flip', label: 'Identify From Photo' },
-  { key: 'lead-analyzer', label: 'Value Checker' },
-  { key: 'inventory', label: 'Inventory' },
-  { key: 'listings', label: 'Listings' },
-  { key: 'sales', label: 'Sold / Profit' },
-  { key: 'csv-export', label: 'CSV Export' },
-  { key: 'settings', label: 'Settings' },
+type NavItem = {
+  key: PageKey
+  label: string
+  activeFor: PageKey[]
+}
+
+const navItems: NavItem[] = [
+  {
+    key: 'sourcing-radar',
+    label: 'Source Deals',
+    activeFor: ['dashboard', 'sourcing-radar', 'sourcing-add-facebook', 'sourcing-craigslist', 'sourcing-lead', 'sourcing-settings'],
+  },
+  {
+    key: 'lead-analyzer',
+    label: 'Value Checker',
+    activeFor: ['lead-analyzer', 'lead-form', 'club-flip', 'value-guide'],
+  },
+  {
+    key: 'inventory',
+    label: 'Inventory',
+    activeFor: ['inventory', 'listings', 'csv-export'],
+  },
+  {
+    key: 'sales',
+    label: 'Profit',
+    activeFor: ['sales'],
+  },
+  {
+    key: 'settings',
+    label: 'Settings',
+    activeFor: ['settings'],
+  },
 ]
 
 export function Sidebar({
@@ -38,9 +59,9 @@ export function Sidebar({
         {navItems.map((item) => (
           <button
             key={item.key}
-            className={`nav-btn ${activePage === item.key ? 'active' : ''}`}
-            data-tour-nav={item.key === 'dashboard' ? 'main' : undefined}
-            data-tour-reports={item.key === 'csv-export' ? 'reports' : undefined}
+            className={`nav-btn ${item.activeFor.includes(activePage) ? 'active' : ''}`}
+            data-tour-nav={item.key === 'sourcing-radar' ? 'main' : undefined}
+            data-tour-reports={item.key === 'inventory' ? 'reports' : undefined}
             onClick={() => {
               onNavigate(item.key)
               onClose?.()

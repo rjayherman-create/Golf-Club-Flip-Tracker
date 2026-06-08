@@ -247,6 +247,10 @@ export function calculateDashboardStats(
   const totalInvested = inventory.reduce((sum, item) => sum + item.totalCost, 0)
   const expectedResaleValue = inventory.reduce((sum, item) => sum + item.estimatedResale, 0)
   const totalProfit = sales.reduce((sum, sale) => sum + sale.profit, 0)
+  const projectedOpenInventoryProfit = inventory.reduce(
+    (sum, item) => sum + Math.max(0, item.estimatedResale - item.totalCost),
+    0,
+  )
   const averageRoi = sales.length
     ? sales.reduce((sum, sale) => sum + sale.roi, 0) / sales.length
     : leads.length
@@ -281,7 +285,7 @@ export function calculateDashboardStats(
     ).length,
     readyToBuy: leads.filter((lead) => lead.recommendation === 'BUY NOW').length,
     passed: leads.filter((lead) => lead.status === 'Passed').length,
-    estimatedProfit: round2(leads.reduce((sum, lead) => sum + Math.max(0, lead.expectedProfit), 0)),
+    estimatedProfit: round2(projectedOpenInventoryProfit),
   }
 }
 

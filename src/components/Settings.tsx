@@ -33,23 +33,6 @@ export function Settings({ settings, onSave }: SettingsProps) {
         </select>
       </label>
       <label>
-        Legal last updated
-        <input
-          type="date"
-          value={draft.legalLastUpdated}
-          onChange={(e) => setDraft((prev) => ({ ...prev, legalLastUpdated: e.target.value }))}
-        />
-      </label>
-      <label>
-        Legal contact email
-        <input
-          type="email"
-          value={draft.legalContactEmail}
-          onChange={(e) => setDraft((prev) => ({ ...prev, legalContactEmail: e.target.value }))}
-          placeholder="legal@example.com"
-        />
-      </label>
-      <label>
         User profile name
         <input value={draft.userName} onChange={(e) => setDraft((prev) => ({ ...prev, userName: e.target.value }))} />
       </label>
@@ -69,81 +52,64 @@ export function Settings({ settings, onSave }: SettingsProps) {
         Default marketplace text
         <textarea rows={3} value={draft.defaultMarketplaceText} onChange={(e) => setDraft((prev) => ({ ...prev, defaultMarketplaceText: e.target.value }))} />
       </label>
-      <label>
-        Preferred profit margin %
-        <input type="number" value={draft.preferredProfitMarginPercent} onChange={(e) => setNumber('preferredProfitMarginPercent', e.target.value)} />
-      </label>
-      <label>
-        Default location
-        <input
-          value={draft.defaultLocation}
-          onChange={(e) => setDraft((prev) => ({ ...prev, defaultLocation: e.target.value }))}
-        />
-      </label>
-      <label>
-        Default resale discount
-        <input
-          type="number"
-          value={draft.defaultResaleDiscount}
-          onChange={(e) => setNumber('defaultResaleDiscount', e.target.value)}
-        />
-      </label>
-      <label>
-        Default max buy percentage
-        <input
-          type="number"
-          value={draft.defaultMaxBuyPercentage}
-          onChange={(e) => setNumber('defaultMaxBuyPercentage', e.target.value)}
-        />
-      </label>
-      <label>
-        Default fast-sale discount
-        <input
-          type="number"
-          value={draft.defaultFastSaleDiscount}
-          onChange={(e) => setNumber('defaultFastSaleDiscount', e.target.value)}
-        />
-      </label>
-      <label>
-        Default grip replacement cost
-        <input
-          type="number"
-          value={draft.defaultGripReplacementCost}
-          onChange={(e) => setNumber('defaultGripReplacementCost', e.target.value)}
-        />
-      </label>
-      <label>
-        Default cleaning cost
-        <input
-          type="number"
-          value={draft.defaultCleaningCost}
-          onChange={(e) => setNumber('defaultCleaningCost', e.target.value)}
-        />
-      </label>
-      <label>
-        Default travel cost
-        <input
-          type="number"
-          value={draft.defaultTravelCost}
-          onChange={(e) => setNumber('defaultTravelCost', e.target.value)}
-        />
-      </label>
-      <label>
-        Preferred minimum ROI
-        <input
-          type="number"
-          value={draft.preferredMinimumRoi}
-          onChange={(e) => setNumber('preferredMinimumRoi', e.target.value)}
-        />
-      </label>
-      <label>
-        Preferred minimum profit
-        <input
-          type="number"
-          value={draft.preferredMinimumProfit}
-          onChange={(e) => setNumber('preferredMinimumProfit', e.target.value)}
-        />
-      </label>
+      <details className="span-2">
+        <summary>Advanced defaults</summary>
+        <div className="inline-grid">
+          <label>
+            Legal last updated
+            <input
+              type="date"
+              value={draft.legalLastUpdated}
+              onChange={(e) => setDraft((prev) => ({ ...prev, legalLastUpdated: e.target.value }))}
+            />
+          </label>
+          <label>
+            Legal contact email
+            <input
+              type="email"
+              value={draft.legalContactEmail}
+              onChange={(e) => setDraft((prev) => ({ ...prev, legalContactEmail: e.target.value }))}
+              placeholder="legal@example.com"
+            />
+          </label>
+          <label>
+            Preferred profit margin %
+            <input type="number" value={draft.preferredProfitMarginPercent} onChange={(e) => setNumber('preferredProfitMarginPercent', e.target.value)} />
+          </label>
+          <label>
+            Default resale discount
+            <input type="number" value={draft.defaultResaleDiscount} onChange={(e) => setNumber('defaultResaleDiscount', e.target.value)} />
+          </label>
+          <label>
+            Default max buy percentage
+            <input type="number" value={draft.defaultMaxBuyPercentage} onChange={(e) => setNumber('defaultMaxBuyPercentage', e.target.value)} />
+          </label>
+          <label>
+            Default fast-sale discount
+            <input type="number" value={draft.defaultFastSaleDiscount} onChange={(e) => setNumber('defaultFastSaleDiscount', e.target.value)} />
+          </label>
+          <label>
+            Grip replacement cost
+            <input type="number" value={draft.defaultGripReplacementCost} onChange={(e) => setNumber('defaultGripReplacementCost', e.target.value)} />
+          </label>
+          <label>
+            Cleaning cost
+            <input type="number" value={draft.defaultCleaningCost} onChange={(e) => setNumber('defaultCleaningCost', e.target.value)} />
+          </label>
+          <label>
+            Travel cost
+            <input type="number" value={draft.defaultTravelCost} onChange={(e) => setNumber('defaultTravelCost', e.target.value)} />
+          </label>
+          <label>
+            Minimum ROI
+            <input type="number" value={draft.preferredMinimumRoi} onChange={(e) => setNumber('preferredMinimumRoi', e.target.value)} />
+          </label>
+          <label>
+            Minimum profit
+            <input type="number" value={draft.preferredMinimumProfit} onChange={(e) => setNumber('preferredMinimumProfit', e.target.value)} />
+          </label>
+        </div>
+      </details>
       <button className="btn btn-primary" onClick={() => onSave({ ...draft, themePreference: 'premium-navy-amber' })}>
         Save Settings
       </button>
@@ -193,20 +159,6 @@ export function Settings({ settings, onSave }: SettingsProps) {
         </label>
       </div>
 
-      <section className="card placeholder-box span-2">
-        <h4>Future Features</h4>
-        <ul className="plain-list">
-          <li>eBay sold comp lookup</li>
-          <li>PGA Value Guide lookup</li>
-          <li>Photo upload</li>
-          <li>OCR club identification from photos</li>
-          <li>Facebook listing export</li>
-          <li>CSV export</li>
-          <li>Cloud sync</li>
-          <li>User login</li>
-          <li>Admin dashboard</li>
-        </ul>
-      </section>
     </section>
   )
 }

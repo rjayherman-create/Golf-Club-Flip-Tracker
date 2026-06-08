@@ -2,8 +2,6 @@ import { useMemo, useState } from 'react'
 import type { Lead } from '../types'
 import {
   calculateValuation,
-  generateSellerMessage,
-  getBrandScore,
 } from '../utils/valuation'
 
 interface LeadAnalyzerProps {
@@ -26,17 +24,6 @@ const redFlagChoices = [
   'Too far to drive for small profit',
 ]
 
-const photoChecklist = [
-  'Full club photo',
-  'Club face photo',
-  'Sole/bottom photo',
-  'Shaft label photo',
-  'Grip photo',
-  'Brand/model closeup',
-  'Any damage photo',
-  'All clubs laid out if full bag',
-]
-
 function numberValue(value: string): number {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : 0
@@ -53,13 +40,22 @@ export function LeadAnalyzer({ leads, onUpdateLead, onMoveToInventory }: LeadAna
   if (!selectedLead) {
     return (
       <section className="card">
-        <h3>Lead Analyzer</h3>
+        <h3>Value Checker</h3>
         <p>Add your first lead to start analyzing deals.</p>
       </section>
     )
   }
 
-  const brandScore = getBrandScore(selectedLead.brand)
+  const compSearchQuery = [selectedLead.brand, selectedLead.model, selectedLead.itemType, selectedLead.loft]
+    .filter(Boolean)
+    .join(' ')
+    .trim()
+  const ebaySoldSearchUrl = `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(
+    `${compSearchQuery || selectedLead.title} golf club`,
+  )}&_sacat=0&LH_Sold=1&LH_Complete=1`
+  const pgaValueGuideSearchUrl = `https://valueguide.pga.com/search-exec/brand/${encodeURIComponent(
+    selectedLead.brand || selectedLead.title || 'golf',
+  )}/`
 
   function updateLead(partial: Partial<Lead>) {
     const next = calculateValuation({ ...selectedLead, ...partial })
@@ -75,10 +71,6 @@ export function LeadAnalyzer({ leads, onUpdateLead, onMoveToInventory }: LeadAna
     updateLead({ redFlags: nextFlags })
   }
 
-  const fullBagMessage = generateSellerMessage('fullBag')
-  const initialMessage = generateSellerMessage('initial')
-  const negotiationMessage = generateSellerMessage('negotiation', Math.max(1, Math.round(selectedLead.repairAdjustedMaxOffer)))
-  const staleMessage = generateSellerMessage('stale', Math.max(1, Math.round(selectedLead.maxSafeOffer)))
   const valueRangeLow = Math.max(0, selectedLead.ebayLow || selectedLead.fastSalePrice)
   const valueRangeHigh = Math.max(valueRangeLow, selectedLead.ebayHigh || selectedLead.conservativeResale)
   const confidenceScore = Math.max(
@@ -89,6 +81,50 @@ export function LeadAnalyzer({ leads, onUpdateLead, onMoveToInventory }: LeadAna
         .filter((value) => value > 0).length * 20 + (selectedLead.brand ? 20 : 0),
     ),
   )
+  const compCount = [
+    selectedLead.ebayLow,
+    selectedLead.ebayAverage,
+    selectedLead.ebayHigh,
+    selectedLead.pgaValue,
+    selectedLead.retailUsedValue,
+    selectedLead.facebookEstimate,
+    selectedLead.manualEstimate,
+  ].filter((value) => value > 0).length
+  const confidenceStates = [
+    {
+      label: 'Sold comps',
+      value: compCount >= 3 ? `${compCount} values entered` : compCount > 0 ? `${compCount} value entered` : 'Needs comps',
+      tone: compCount >= 3 ? 'good' : compCount > 0 ? 'warning' : 'pass',
+    },
+    {
+      label: 'Brand/model',
+      value: selectedLead.brand && selectedLead.model ? 'Complete' : 'Incomplete',
+      tone: selectedLead.brand && selectedLead.model ? 'good' : 'warning',
+    },
+    {
+      label: 'Listing URL',
+      value: selectedLead.listingUrl ? 'Captured' : 'Missing',
+      tone: selectedLead.listingUrl ? 'good' : 'warning',
+    },
+    {
+      label: 'Cost inputs',
+      value:
+        selectedLead.cleaningCost + selectedLead.gripCost + selectedLead.travelCost > 0
+          ? 'Included'
+          : 'No added costs',
+      tone: selectedLead.cleaningCost + selectedLead.gripCost + selectedLead.travelCost > 0 ? 'good' : 'warning',
+    },
+    {
+      label: 'Risk flags',
+      value: selectedLead.redFlags.length ? `${selectedLead.redFlags.length} selected` : 'None selected',
+      tone: selectedLead.redFlags.length ? 'pass' : 'good',
+    },
+    {
+      label: 'Decision',
+      value: selectedLead.recommendation,
+      tone: selectedLead.recommendation === 'PASS' ? 'pass' : selectedLead.recommendation === 'WATCH' ? 'warning' : 'good',
+    },
+  ]
 
   return (
     <div className="stack-lg">
@@ -158,7 +194,7 @@ export function LeadAnalyzer({ leads, onUpdateLead, onMoveToInventory }: LeadAna
 
         <details open>
           <summary>Value comps</summary>
-          <p className="muted-copy">Manual comp entry is supported. eBay and PGA lookup placeholders are below.</p>
+          <p className="muted-copy">Manual comp entry drives the valuation. Use the lookup links to verify sold comps, then enter the numbers here.</p>
           <div className="inline-grid">
             <label>
               eBay sold low
@@ -218,12 +254,12 @@ export function LeadAnalyzer({ leads, onUpdateLead, onMoveToInventory }: LeadAna
             </label>
           </div>
           <div className="row-wrap" style={{ marginTop: '8px' }}>
-            <button className="btn" type="button" disabled>
-              eBay sold comps lookup (placeholder)
-            </button>
-            <button className="btn" type="button" disabled>
-              PGA Value Guide lookup (placeholder)
-            </button>
+            <a className="btn" href={ebaySoldSearchUrl} target="_blank" rel="noreferrer">
+              Open eBay sold search
+            </a>
+            <a className="btn" href={pgaValueGuideSearchUrl} target="_blank" rel="noreferrer">
+              Open PGA Value Guide
+            </a>
           </div>
         </details>
 
@@ -268,16 +304,8 @@ export function LeadAnalyzer({ leads, onUpdateLead, onMoveToInventory }: LeadAna
           <strong>${selectedLead.conservativeResale.toFixed(2)}</strong>
         </article>
         <article className="card">
-          <h4>Quick sale price</h4>
-          <strong>${selectedLead.fastSalePrice.toFixed(2)}</strong>
-        </article>
-        <article className="card">
           <h4>Maximum recommended buy price</h4>
           <strong>${selectedLead.maxSafeOffer.toFixed(2)}</strong>
-        </article>
-        <article className="card">
-          <h4>Repair-adjusted max offer</h4>
-          <strong>${selectedLead.repairAdjustedMaxOffer.toFixed(2)}</strong>
         </article>
         <article className="card">
           <h4>Estimated profit</h4>
@@ -286,32 +314,34 @@ export function LeadAnalyzer({ leads, onUpdateLead, onMoveToInventory }: LeadAna
           </strong>
         </article>
         <article className="card">
-          <h4>Estimated ROI</h4>
-          <strong>{selectedLead.roi.toFixed(1)}%</strong>
-        </article>
-        <article className="card">
-          <h4>Deal grade</h4>
-          <strong>{selectedLead.dealGrade}</strong>
-        </article>
-        <article className="card">
-          <h4>Confidence score</h4>
-          <strong>{confidenceScore}%</strong>
-        </article>
-        <article className="card">
           <h4>Buy/Hold/Avoid</h4>
           <span className={`badge badge-${selectedLead.recommendation.toLowerCase().replace(' ', '-')}`}>
             {selectedLead.recommendation}
           </span>
         </article>
-        <article className="card">
-          <h4>Brand score</h4>
-          <strong>{brandScore}/10</strong>
-        </article>
       </section>
 
       <section className="card">
-        <h4>Red Flag System</h4>
-        <div className="chip-grid">
+        <div className="row-wrap space-between">
+          <div>
+            <h4>Valuation Confidence</h4>
+            <p className="muted-copy">Use these trust checks before making an offer. Green means usable, blue means verify, red means slow down.</p>
+          </div>
+          <strong>{confidenceScore}%</strong>
+        </div>
+        <div className="trust-grid">
+          {confidenceStates.map((state) => (
+            <article key={state.label} className="trust-item">
+              <span className={`badge badge-${state.tone}`}>{state.label}</span>
+              <strong>{state.value}</strong>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <details>
+        <summary>Advanced risk checks</summary>
+        <div className="chip-grid" style={{ marginTop: '10px' }}>
           {redFlagChoices.map((flag) => (
             <button
               key={flag}
@@ -323,28 +353,7 @@ export function LeadAnalyzer({ leads, onUpdateLead, onMoveToInventory }: LeadAna
             </button>
           ))}
         </div>
-      </section>
-
-      <section className="card">
-        <h4>Photo Checklist</h4>
-        <div className="checklist">
-          {photoChecklist.map((item) => (
-            <label key={item}>
-              <input type="checkbox" /> {item}
-            </label>
-          ))}
-        </div>
-      </section>
-
-      <section className="card">
-        <h4>Seller Message Generator</h4>
-        <div className="stack-sm">
-          <textarea value={initialMessage} readOnly rows={3} />
-          <textarea value={fullBagMessage} readOnly rows={2} />
-          <textarea value={negotiationMessage} readOnly rows={3} />
-          <textarea value={staleMessage} readOnly rows={2} />
-        </div>
-      </section>
+      </details>
 
       <section className="row-wrap analyzer-actions">
         <button className="btn btn-danger" onClick={() => updateLead({ status: 'Passed' })}>

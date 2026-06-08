@@ -12,6 +12,7 @@ interface LayoutProps {
   businessName: string
   stats: DashboardStats
   onQuickAdd: () => void
+  onFindDeals: () => void
   children: ReactNode
 }
 
@@ -23,6 +24,7 @@ export function Layout({
   businessName,
   stats,
   onQuickAdd,
+  onFindDeals,
   children,
 }: LayoutProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -38,11 +40,11 @@ export function Layout({
 
       <div className="mobile-topbar">
         <button className="menu-btn" onClick={() => setMobileMenuOpen(true)}>
-          ☰
+          Menu
         </button>
-        <div className="mobile-brand">Reseller Workflow</div>
-        <button className="quick-btn" onClick={onQuickAdd}>
-          + Club
+        <div className="mobile-brand">Sourcing Workflow</div>
+        <button className="quick-btn" onClick={onFindDeals}>
+          Find Deals
         </button>
       </div>
 
@@ -64,8 +66,11 @@ export function Layout({
           </div>
           <div className="header-actions">
             <div className="score-pill">Today's Sourcing Score: {sourcingScore}</div>
-            <button className="quick-btn" data-tour-primary-action="add" onClick={onQuickAdd}>
-              Quick Add Club
+            <button className="quick-btn" data-tour-primary-action="source" onClick={onFindDeals}>
+              Find Deals
+            </button>
+            <button className="btn btn-outline" data-tour-primary-action="add" onClick={onQuickAdd}>
+              Quick Add
             </button>
           </div>
         </header>
@@ -82,7 +87,7 @@ export function Layout({
             <span aria-hidden="true">|</span>
             <a href="/privacy">Privacy Policy</a>
           </div>
-          <p>© {new Date().getFullYear()} {businessName || 'Golf Flip Tracker'}. All rights reserved.</p>
+          <p>(c) {new Date().getFullYear()} {businessName || 'Golf Flip Tracker'}. All rights reserved.</p>
         </footer>
 
         <TutorialSystem appName="Golf Flip Tracker" activePage={activePage} onGoDashboard={() => setActivePage('dashboard')} />

@@ -218,7 +218,7 @@ function useElementRect(selector: string) {
 
   useEffect(() => {
     if (!selector) {
-      setRect(null)
+      queueMicrotask(() => setRect(null))
       return
     }
 
@@ -256,10 +256,17 @@ function TipBubble({ selector, text, storageKey }: { selector: string; text: str
     const count = Number(readFlag(key) ?? '0')
     if (count >= 3) return
 
-    writeFlag(key, String(count + 1))
-    setVisible(true)
-    const timer = window.setTimeout(() => setVisible(false), 4200)
-    return () => window.clearTimeout(timer)
+    let timer: number | undefined
+    const showTimer = window.setTimeout(() => {
+      writeFlag(key, String(count + 1))
+      setVisible(true)
+      timer = window.setTimeout(() => setVisible(false), 4200)
+    }, 0)
+
+    return () => {
+      window.clearTimeout(showTimer)
+      if (timer !== undefined) window.clearTimeout(timer)
+    }
   }, [storageKey])
 
   if (!visible || !rect) return null
@@ -279,6 +286,7 @@ function TipBubble({ selector, text, storageKey }: { selector: string; text: str
 
 export function TutorialSystem({ appName, activePage, onGoDashboard }: TutorialSystemProps) {
   const [tourStep, setTourStep] = useState<number | null>(null)
+  const [disableTour, setDisableTour] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const [contextOpen, setContextOpen] = useState(false)
   const [faqQuery, setFaqQuery] = useState('')
@@ -310,9 +318,11 @@ export function TutorialSystem({ appName, activePage, onGoDashboard }: TutorialS
   }
 
   function skipTour() {
-    writeFlag(TOUR_COMPLETED_KEY, 'true')
+    if (disableTour) {
+      writeFlag(TOUR_COMPLETED_KEY, 'true')
+    }
     setTourStep(null)
-    trackTutorialEvent('tour_skipped', { page: activePage })
+    trackTutorialEvent('tour_skipped', { page: activePage, disableTour })
   }
 
   function nextTourStep() {
@@ -350,6 +360,14 @@ export function TutorialSystem({ appName, activePage, onGoDashboard }: TutorialS
           <div className="tour-modal">
             <h3>Welcome to {appName}</h3>
             <p>We&apos;ll show you the basics in under 60 seconds.</p>
+            <label className="tour-skip-pref">
+              <input
+                type="checkbox"
+                checked={disableTour}
+                onChange={(event) => setDisableTour(event.target.checked)}
+              />
+              Do not show again
+            </label>
             <div className="row-wrap">
               <button className="btn btn-primary" onClick={startTour}>Start Quick Tour</button>
               <button className="btn" onClick={skipTour}>Skip Tour</button>
@@ -379,6 +397,14 @@ export function TutorialSystem({ appName, activePage, onGoDashboard }: TutorialS
           >
             <h4>{activeStep.title}</h4>
             <p>{activeStep.message}</p>
+            <label className="tour-skip-pref">
+              <input
+                type="checkbox"
+                checked={disableTour}
+                onChange={(event) => setDisableTour(event.target.checked)}
+              />
+              Do not show again
+            </label>
             <div className="row-wrap">
               <button className="btn btn-primary" onClick={nextTourStep}>Next</button>
               <button className="btn" onClick={skipTour}>Skip</button>

@@ -6,9 +6,17 @@ interface InventoryProps {
   inventory: InventoryItem[]
   onUpdateInventory: (item: InventoryItem) => void
   onCreateFromBundle: (items: InventoryItem[]) => void
+  onOpenValueChecker: () => void
+  onOpenListings: () => void
 }
 
-export function Inventory({ inventory, onUpdateInventory, onCreateFromBundle }: InventoryProps) {
+export function Inventory({
+  inventory,
+  onUpdateInventory,
+  onCreateFromBundle,
+  onOpenValueChecker,
+  onOpenListings,
+}: InventoryProps) {
   const [bundlePrice, setBundlePrice] = useState('150')
   const [activeFilter, setActiveFilter] = useState('All')
   const [selectedInventoryId, setSelectedInventoryId] = useState(inventory[0]?.id ?? '')
@@ -112,9 +120,9 @@ export function Inventory({ inventory, onUpdateInventory, onCreateFromBundle }: 
           </div>
           <p className="muted-copy" style={{ marginTop: '8px' }}>Comps used: eBay sold + local marketplace estimates captured in Value Checker.</p>
           <div className="row-wrap" style={{ marginTop: '8px' }}>
-            <button className="btn" onClick={() => onUpdateInventory({ ...selectedItem, notes: `${selectedItem.notes}\nEdited ${new Date().toISOString()}`.trim() })}>Edit</button>
-            <button className="btn" onClick={() => onUpdateInventory({ ...selectedItem, status: 'Ready to List' })}>Check Value</button>
-            <button className="btn" onClick={() => onUpdateInventory({ ...selectedItem, status: 'Ready to List' })}>Create Listing</button>
+            <button className="btn" onClick={() => onUpdateInventory({ ...selectedItem, notes: `${selectedItem.notes}\nEdited ${new Date().toISOString()}`.trim() })}>Add Note</button>
+            <button className="btn" onClick={onOpenValueChecker}>Check Value</button>
+            <button className="btn" onClick={onOpenListings}>Create Listing</button>
             <button className="btn btn-primary" onClick={() => onUpdateInventory({ ...selectedItem, status: 'Listed' })}>Mark Listed</button>
             <button className="btn btn-success" onClick={() => onUpdateInventory({ ...selectedItem, status: 'Sold' })}>Mark Sold</button>
             <button className="btn btn-danger" onClick={() => onUpdateInventory({ ...selectedItem, status: 'Archived' })}>Archive</button>
@@ -122,7 +130,9 @@ export function Inventory({ inventory, onUpdateInventory, onCreateFromBundle }: 
         </section>
       )}
 
-      <section className="card form-grid">
+      <details>
+        <summary>Advanced bundle split</summary>
+      <section className="form-grid" style={{ marginTop: '12px' }}>
         <h3>Bundle Split Tool</h3>
         <label>
           Purchase lot price
@@ -218,6 +228,7 @@ export function Inventory({ inventory, onUpdateInventory, onCreateFromBundle }: 
           Split Bundle Into Inventory Items
         </button>
       </section>
+      </details>
     </div>
   )
 }

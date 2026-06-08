@@ -1,4 +1,4 @@
-import { type MouseEvent, useMemo, useState } from 'react'
+import { type MouseEvent, useMemo, useRef, useState } from 'react'
 import type {
   GolfLeadItem,
   GolfLeadRadar,
@@ -49,9 +49,7 @@ interface LocalSourcingRadarProps {
   onAddFollowup: (followup: LeadFollowup) => void
 }
 
-function percent(value: number) {
-  return `${value.toFixed(0)}%`
-}
+type SourceHubTab = 'inbox' | 'facebook' | 'scan' | 'followups' | 'settings'
 
 function currency(value: number) {
   return `$${value.toFixed(2)}`
@@ -318,6 +316,10 @@ export function LocalSourcingRadar({
   onFetchDeals,
   onImportFacebookListings,
 }: LocalSourcingRadarProps) {
+  const hubTopRef = useRef<HTMLElement | null>(null)
+  const facebookImportRef = useRef<HTMLElement | null>(null)
+  const publicSourcesRef = useRef<HTMLElement | null>(null)
+  const settingsRef = useRef<HTMLElement | null>(null)
   const [copiedLeadId, setCopiedLeadId] = useState<string | null>(null)
   const [lastSentMessage, setLastSentMessage] = useState<{ leadId: string | null; message: string }>({
     leadId: null,
@@ -330,6 +332,7 @@ export function LocalSourcingRadar({
   const [sourceFilter, setSourceFilter] = useState('All')
   const [quickFilter, setQuickFilter] = useState<'all' | 'no-photo' | 'due' | 'strong-buy'>('all')
   const [mapMode, setMapMode] = useState<'list' | 'map'>('list')
+  const [sourceHubTab, setSourceHubTab] = useState<SourceHubTab>('inbox')
   const [scanResults, setScanResults] = useState<GolfLeadRadar[] | null>(null)
   const [scanning, setScanning] = useState(false)
   const [scanMessage, setScanMessage] = useState('')
@@ -391,16 +394,27 @@ export function LocalSourcingRadar({
     () => sources.filter((source) => source.source_type !== 'facebook_manual' && source.enabled),
     [sources],
   )
+  const enabledPublicSourceNames = useMemo(
+    () => radarSources.map((source) => source.source_name),
+    [radarSources],
+  )
+  const sourceFilterOptions = useMemo(
+    () => [
+      { value: 'All', label: 'All Sources' },
+      ...manualFacebookSources.map((source) => ({
+        value: source.source_name,
+        label: source.source_name,
+      })),
+      ...radarSources.map((source) => ({
+        value: source.source_name,
+        label: source.source_name,
+      })),
+    ],
+    [manualFacebookSources, radarSources],
+  )
 
   const strongBuys = useMemo(
     () => eligibleLeads.filter((lead) => lead.deal_label === 'Strong Buy'),
-    [eligibleLeads],
-  )
-  const recentlyAddedLeads = useMemo(
-    () =>
-      [...eligibleLeads]
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-        .slice(0, 6),
     [eligibleLeads],
   )
   const todaysLeads = useMemo(() => {
@@ -445,36 +459,39 @@ export function LocalSourcingRadar({
     })
   }, [countyFilter, dueLeadIds, eligibleLeads, quickFilter, searchText, sourceFilter])
 
-  const totalPotentialProfit = eligibleLeads.reduce((sum, lead) => sum + Math.max(0, lead.estimated_profit_high), 0)
   const averageExpectedProfit = eligibleLeads.length
     ? eligibleLeads.reduce((sum, lead) => sum + lead.estimated_profit_low, 0) / eligibleLeads.length
     : 0
 
-  const leadsByCounty = useMemo(() => {
-    const grouped: Record<string, number> = {}
-    eligibleLeads.forEach((lead) => {
-      grouped[lead.county] = (grouped[lead.county] ?? 0) + 1
-    })
-    return grouped
-  }, [eligibleLeads])
+  const zoneBoard = useMemo(() => {
+    const grouped = new Map<string, GolfLeadRadar[]>()
+    for (const lead of filteredLeads) {
+      const key = lead.county || 'Unknown zone'
+      grouped.set(key, [...(grouped.get(key) ?? []), lead])
+    }
 
-  const leadsBySource = useMemo(() => {
-    const grouped: Record<string, number> = {}
-    eligibleLeads.forEach((lead) => {
-      grouped[lead.source_name] = (grouped[lead.source_name] ?? 0) + 1
-    })
-    return grouped
-  }, [eligibleLeads])
+    return Array.from(grouped.entries())
+      .map(([county, items]) => {
+        const strongBuyCount = items.filter((lead) => lead.deal_label === 'Strong Buy').length
+        const noPhotoCount = items.filter((lead) => hasNoOriginalPhotos(lead)).length
+        const potentialProfit = items.reduce((sum, lead) => sum + Math.max(0, lead.estimated_profit_high), 0)
+        const averageDrive = items.length
+          ? items.reduce((sum, lead) => sum + lead.estimated_drive_minutes, 0) / items.length
+          : 0
+        const bestLead = [...items].sort((left, right) => right.deal_score - left.deal_score)[0]
 
-  const monthKey = new Date().toISOString().slice(0, 7)
-  const boughtThisMonth = eligibleLeads.filter((lead) => lead.status === 'bought' && lead.updated_at.startsWith(monthKey)).length
-  const soldThisMonth = eligibleLeads.filter((lead) => lead.status === 'sold' && lead.updated_at.startsWith(monthKey)).length
-  const roiThisMonth = eligibleLeads.length
-    ? eligibleLeads
-        .filter((lead) => lead.updated_at.startsWith(monthKey))
-        .reduce((sum, lead) => sum + lead.deal_score, 0) /
-      Math.max(1, eligibleLeads.filter((lead) => lead.updated_at.startsWith(monthKey)).length)
-    : 0
+        return {
+          county,
+          items,
+          strongBuyCount,
+          noPhotoCount,
+          potentialProfit,
+          averageDrive,
+          bestLead,
+        }
+      })
+      .sort((left, right) => right.strongBuyCount - left.strongBuyCount || right.potentialProfit - left.potentialProfit)
+  }, [filteredLeads])
 
   const currentLead = selectedLead
   const itemRows = leadItems.filter((item) => item.lead_id === currentLead?.id)
@@ -536,7 +553,7 @@ export function LocalSourcingRadar({
 
     setLastSentMessage({
       leadId: currentLead.id,
-      message: `${target === 'seller' ? 'Seller' : 'Buyer'} message sent from app at ${formatDateTime(now)}.`,
+      message: `${target === 'seller' ? 'Seller' : 'Buyer'} follow-up logged at ${formatDateTime(now)}.`,
     })
   }
 
@@ -759,99 +776,100 @@ export function LocalSourcingRadar({
     }
   }
 
+  function scrollToHubSection(section: 'top' | 'facebook' | 'sources' | 'settings') {
+    if (section === 'facebook') setSourceHubTab('facebook')
+    if (section === 'sources') setSourceHubTab('scan')
+    if (section === 'settings') setSourceHubTab('settings')
+    if (section === 'top') setSourceHubTab('inbox')
+
+    const target =
+      section === 'facebook'
+        ? facebookImportRef.current
+        : section === 'sources'
+          ? publicSourcesRef.current
+          : section === 'settings'
+            ? settingsRef.current
+            : hubTopRef.current
+
+    target?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  }
+
   function renderDashboard() {
+    const nextBestAction =
+      followupsDueToday.length > 0
+        ? `Message ${followupsDueToday.length} seller follow-up${followupsDueToday.length === 1 ? '' : 's'} due today.`
+        : strongBuyOpenLeads.length > 0
+          ? `Review ${strongBuyOpenLeads.length} active strong buy lead${strongBuyOpenLeads.length === 1 ? '' : 's'}.`
+          : noPhotoLeads.length > 0
+            ? `Request photos for ${noPhotoLeads.length} lead${noPhotoLeads.length === 1 ? '' : 's'} before buying.`
+            : 'Scan public sources or import fresh Facebook listings.'
+
     return (
       <div className="stack-lg">
-        <section className="hero-card">
-          <h3>LOCAL SOURCING RADAR</h3>
+        <section className="hero-card" ref={hubTopRef}>
+          <h3>Source Deals Hub</h3>
           <p>
-            The main job is to find a source of golf clubs and bags first. Scan local used clubs, golf
-            bags, and club lots across Long Island, NYC, and nearby tri-state pickup zones. The module
-              focuses on local pickup and local delivery only.
+            Find local golf club and bag deals first, then value them before buying. This hub focuses on
+            Facebook Marketplace and Craigslist opportunities in local pickup and local delivery zones.
           </p>
-          <div className="row-wrap">
-            <button className="btn btn-success" onClick={() => onNavigate('/sourcing/add-facebook')}>
-              Paste Facebook URL
+          <div className="source-tabbar">
+            <button className={`source-tab ${sourceHubTab === 'inbox' ? 'active' : ''}`} type="button" onClick={() => scrollToHubSection('top')}>
+              Lead Inbox
             </button>
-            <button className="btn btn-info" onClick={() => onNavigate('/sourcing/craigslist')}>
-              Craigslist Scan
+            <button className={`source-tab ${sourceHubTab === 'facebook' ? 'active' : ''}`} type="button" onClick={() => scrollToHubSection('facebook')}>
+              Import Facebook
+            </button>
+            <button className={`source-tab ${sourceHubTab === 'scan' ? 'active' : ''}`} type="button" onClick={() => scrollToHubSection('sources')}>
+              Scan Public Sources
+            </button>
+            <button className={`source-tab ${sourceHubTab === 'followups' ? 'active' : ''}`} type="button" onClick={() => setSourceHubTab('followups')}>
+              Follow-ups
+            </button>
+            <button className={`source-tab ${sourceHubTab === 'settings' ? 'active' : ''}`} type="button" onClick={() => scrollToHubSection('settings')}>
+              Settings
             </button>
           </div>
           <div className="business-rule-banner" style={{ marginTop: '10px' }}>
-            <strong>Facebook import:</strong> paste a real Marketplace item URL on the next screen. <strong>Craigslist scan:</strong> searches live public Craigslist sources.
-          </div>
-          <div className="business-rule-banner">
-            <strong>Source finder:</strong> Facebook Marketplace and Craigslist only. No shipping-only opportunities.
+            <strong>Facebook import:</strong> paste a real Marketplace item URL on the next screen. <strong>Public scan:</strong> searches enabled public sources like Craigslist, garage-sale feeds, and estate-sale listings.
           </div>
         </section>
 
-        <section className="card">
-          <h4>Lead source priority</h4>
-          <div className="chip-grid">
-            <span className="badge badge-strong-buy">Facebook manual import</span>
-            <span className="badge badge-good">Craigslist</span>
-            <span className="badge">Inspect Facebook leads first</span>
-            <span className="badge">Focus on pickup, local delivery, and margin</span>
-          </div>
+        <section className="business-rule-banner">
+          <strong>Next best sourcing action:</strong> {nextBestAction}
         </section>
 
+        <section className="source-workflow">
+          <button className="workflow-step-card" type="button" onClick={() => setSourceHubTab('facebook')}>
+            <span className="badge">1. Get leads</span>
+            <strong>Import Facebook</strong>
+            <p>Paste real marketplace URLs or enter a clean manual lead.</p>
+          </button>
+          <button className="workflow-step-card" type="button" onClick={() => {
+            setSourceHubTab('inbox')
+            setQuickFilter(strongBuyOpenLeads.length > 0 ? 'strong-buy' : 'no-photo')
+          }}>
+            <span className="badge">2. Vet leads</span>
+            <strong>{strongBuyOpenLeads.length} strong buys</strong>
+            <p>{noPhotoLeads.length} still need seller photos before buying.</p>
+          </button>
+          <button className="workflow-step-card" type="button" onClick={() => setSourceHubTab('followups')}>
+            <span className="badge">3. Follow up</span>
+            <strong>{followupsDueToday.length} due today</strong>
+            <p>Message sellers, confirm photos, and move hot deals forward.</p>
+          </button>
+        </section>
+
+        {sourceHubTab === 'inbox' && (
+          <>
         <section className="stats-grid">
           <article className="card"><h4>New leads today</h4><strong>{todaysLeads.length}</strong></article>
           <article className="card"><h4>Strong Buy leads</h4><strong>{strongBuys.length}</strong></article>
           <article className="card"><h4>Average expected profit</h4><strong>{currency(averageExpectedProfit)}</strong></article>
-          <article className="card"><h4>Total potential profit</h4><strong>{currency(totalPotentialProfit)}</strong></article>
           <article className="card"><h4>Follow-ups due today</h4><strong>{followupsDueToday.length}</strong></article>
-          <article className="card"><h4>Bought this month</h4><strong>{boughtThisMonth}</strong></article>
-          <article className="card"><h4>Sold this month</h4><strong>{soldThisMonth}</strong></article>
-          <article className="card"><h4>ROI this month</h4><strong>{percent(roiThisMonth)}</strong></article>
-        </section>
-
-        <section className="card">
-          <h4>Workflow Coach</h4>
-          <div className="workflow-grid">
-            <article className="workflow-card">
-              <p className="muted-copy">Step 1</p>
-              <strong>{noPhotoLeads.length} leads missing photos</strong>
-              <p>Get seller photos before any purchase decision.</p>
-              <button className="btn btn-primary" type="button" onClick={() => setQuickFilter('no-photo')}>
-                Review no-photo leads
-              </button>
-            </article>
-            <article className="workflow-card">
-              <p className="muted-copy">Step 2</p>
-              <strong>{followupsDueToday.length} follow-ups due today</strong>
-              <p>Keep momentum so good deals do not go cold.</p>
-              <button className="btn" type="button" onClick={() => setQuickFilter('due')}>
-                Focus due follow-ups
-              </button>
-            </article>
-            <article className="workflow-card">
-              <p className="muted-copy">Step 3</p>
-              <strong>{strongBuyOpenLeads.length} active strong buys</strong>
-              <p>Prioritize best-margin opportunities first.</p>
-              <button className="btn btn-success" type="button" onClick={() => setQuickFilter('strong-buy')}>
-                Focus strong buys
-              </button>
-            </article>
-          </div>
-          <div className="row-wrap" style={{ marginTop: '10px' }}>
-            <button className={`chip ${quickFilter === 'all' ? 'selected red' : ''}`} type="button" onClick={() => setQuickFilter('all')}>
-              All leads
-            </button>
-            <button className={`chip ${quickFilter === 'no-photo' ? 'selected red' : ''}`} type="button" onClick={() => setQuickFilter('no-photo')}>
-              No photos
-            </button>
-            <button className={`chip ${quickFilter === 'due' ? 'selected red' : ''}`} type="button" onClick={() => setQuickFilter('due')}>
-              Due today
-            </button>
-            <button className={`chip ${quickFilter === 'strong-buy' ? 'selected red' : ''}`} type="button" onClick={() => setQuickFilter('strong-buy')}>
-              Strong buy
-            </button>
-          </div>
         </section>
 
         <section className="card form-grid">
-          <h4>Search and Filter</h4>
+          <h4>Lead Queue Controls</h4>
           <label>
             Search keywords
             <input value={searchText} onChange={(event) => setSearchText(event.target.value)} placeholder="Titleist, Vokey, golf clubs lot" />
@@ -868,17 +886,11 @@ export function LocalSourcingRadar({
           <label>
             Source
             <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}>
-              <option>All</option>
-              <optgroup label="Manual Facebook">
-                {manualFacebookSources.map((source) => (
-                  <option key={source.id}>{source.source_name}</option>
-                ))}
-              </optgroup>
-              <optgroup label="Radar / public sources">
-                {radarSources.map((source) => (
-                  <option key={source.id}>{source.source_name}</option>
-                ))}
-              </optgroup>
+              {sourceFilterOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </select>
           </label>
           <label>
@@ -892,130 +904,61 @@ export function LocalSourcingRadar({
               </button>
             </div>
           </label>
-        </section>
-
-        <section className="card">
-          <h4>Strong Buy Leads</h4>
-          <div className="deal-card-grid">
-            {strongBuys.slice(0, 6).map((lead) => {
-              const flags = getRiskFlags(lead, settings)
-              const sold = lead.status === 'sold'
-              return (
-                <div key={lead.id} className="deal-card" onClick={() => onNavigate(`/sourcing/lead/${lead.id}`)} role="button" tabIndex={0}>
-                  <DealPhotoCarousel lead={lead} />
-                  <div className="row-wrap space-between">
-                    <strong>{lead.title}</strong>
-                    <span className={`badge ${sold ? 'badge-pass' : 'badge-buy'}`}>{sold ? 'Already Sold' : 'Strong Buy'}</span>
-                  </div>
-                  <p>{lead.location_text}</p>
-                  <p>{currency(lead.asking_price)} asking</p>
-                  <p>{currency(lead.estimated_profit_high)} potential profit</p>
-                  <p className="muted-copy">Next: {getLeadNextStep(lead)}</p>
-                  <p className="muted-copy">Updated {formatDateTime(lead.updated_at)}</p>
-                  <div className="row-wrap">
-                      {isRealListingLead(lead) && <span className="badge badge-good">Real listing URL</span>}
-                      {getFacebookItemId(lead.source_url) && (
-                        <span className="badge">FB item #{getFacebookItemId(lead.source_url)}</span>
-                      )}
-                    {lead.pickup_available && <span className="badge">Pickup Only</span>}
-                    {lead.local_delivery_available && <span className="badge">Local Delivery</span>}
-                    {lead.shipping_required && <span className="badge badge-pass">Avoid Shipping</span>}
-                    {flags.length > 0 && <span className="badge">Needs Research</span>}
-                  </div>
-                  <div className="row-wrap" style={{ marginTop: '8px' }}>
-                    {!sold && hasExternalUrl(getPrimaryContactUrl(lead)) && (
-                      <a
-                        className="btn btn-secondary"
-                        href={getPrimaryContactUrl(lead)}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        {getPrimaryContactLabel(lead)}
-                      </a>
-                    )}
-                    {!sold ? (
-                      <button className="btn" type="button" onClick={(event) => void copySellerOutreach(lead, event)}>
-                        {copiedLeadId === lead.id ? 'Copied' : hasNoOriginalPhotos(lead) ? 'Request photos' : 'Message seller'}
-                      </button>
-                    ) : (
-                      <span className="muted-copy">This deal is marked sold</span>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
+          <div className="span-2 row-wrap">
+            <button className={`chip ${quickFilter === 'all' ? 'selected red' : ''}`} type="button" onClick={() => setQuickFilter('all')}>
+              All
+            </button>
+            <button className={`chip ${quickFilter === 'no-photo' ? 'selected red' : ''}`} type="button" onClick={() => setQuickFilter('no-photo')}>
+              Needs photos
+            </button>
+            <button className={`chip ${quickFilter === 'due' ? 'selected red' : ''}`} type="button" onClick={() => setQuickFilter('due')}>
+              Due today
+            </button>
+            <button className={`chip ${quickFilter === 'strong-buy' ? 'selected red' : ''}`} type="button" onClick={() => setQuickFilter('strong-buy')}>
+              Strong buy
+            </button>
           </div>
         </section>
 
         <section className="card">
-          <h4>Recently Added Leads</h4>
-          <p className="muted-copy">Newest imported leads appear here first so you can review what was just added.</p>
-          <div className="stack-sm">
-            {recentlyAddedLeads.map((lead) => (
-              <button key={lead.id} className="deal-card compact" onClick={() => onNavigate(`/sourcing/lead/${lead.id}`)}>
-                <strong>{lead.title}</strong>
-                <p>{lead.source_name}</p>
-                <p className="muted-copy">Added {formatDateTime(lead.created_at)}</p>
-                <div className="row-wrap">
-                  {isRealListingLead(lead) && <span className="badge badge-good">Real listing URL</span>}
-                  {getFacebookItemId(lead.source_url) && (
-                    <span className="badge">FB item #{getFacebookItemId(lead.source_url)}</span>
-                  )}
-                  <span className="badge">{lead.deal_label}</span>
-                </div>
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section className="card">
-          <h4>Leads by county</h4>
-          <div className="chip-grid">
-            {Object.entries(leadsByCounty).map(([county, count]) => (
-              <span key={county} className="badge">
-                {county}: {count}
-              </span>
-            ))}
-          </div>
-        </section>
-
-        <section className="card">
-          <h4>Leads by source</h4>
-          <div className="chip-grid">
-            {Object.entries(leadsBySource).map(([source, count]) => (
-              <span key={source} className="badge">
-                {source}: {count}
-              </span>
-            ))}
-          </div>
-        </section>
-
-        <section className="card">
-          <h4>Leads needing follow-up</h4>
-          <div className="stack-sm">
-            {followupsDueToday.slice(0, 6).map((followup) => {
-              const lead = leads.find((item) => item.id === followup.lead_id)
-              return (
-                <button key={followup.id} className="deal-card compact" onClick={() => onNavigate(`/sourcing/lead/${followup.lead_id}`)}>
-                  <strong>{lead?.title ?? 'Lead'}</strong>
-                  <p>{followup.followup_type.replaceAll('_', ' ')}</p>
-                  <p>Due {followup.due_date}</p>
-                </button>
-              )
-            })}
-          </div>
-        </section>
-
-        <section className="card">
-          <h4>Filtered leads</h4>
+          <h4>Lead Queue</h4>
           {mapMode === 'map' ? (
-            <div className="placeholder-map">
-              Map placeholder for Long Island, NYC, and Westchester sourcing zones.
+            <div className="zone-board">
+              {zoneBoard.length > 0 ? zoneBoard.map((zone) => (
+                <button key={zone.county} className="zone-card" type="button" onClick={() => setCountyFilter(zone.county)}>
+                  <div className="row-wrap space-between">
+                    <strong>{zone.county}</strong>
+                    <span className="badge">{zone.items.length} leads</span>
+                  </div>
+                  <p>{zone.strongBuyCount} strong buys</p>
+                  <p>{zone.noPhotoCount} need seller photos</p>
+                  <p>{currency(zone.potentialProfit)} potential profit</p>
+                  <p className="muted-copy">Avg drive: {Math.round(zone.averageDrive)} min</p>
+                  {zone.bestLead && <p className="muted-copy">Best lead: {zone.bestLead.title}</p>}
+                </button>
+              )) : (
+                <div className="empty-state">
+                  <strong>No zones match the current filters.</strong>
+                  <p>Clear filters, import Facebook leads, or scan public sources.</p>
+                  <div className="row-wrap">
+                    <button className="btn" type="button" onClick={() => {
+                      setCountyFilter('All')
+                      setSourceFilter('All')
+                      setQuickFilter('all')
+                      setSearchText('')
+                    }}>
+                      Clear Filters
+                    </button>
+                    <button className="btn btn-info" type="button" onClick={() => setSourceHubTab('scan')}>
+                      Scan Public Sources
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="deal-card-grid">
-              {filteredLeads.map((lead) => {
+              {filteredLeads.length > 0 ? filteredLeads.map((lead) => {
                 const pickupDifficulty = classifyPickupDifficulty(lead.distance_miles, lead.estimated_drive_minutes)
                 const riskFlags = getRiskFlags(lead, settings)
                 const sold = lead.status === 'sold'
@@ -1068,10 +1011,33 @@ export function LocalSourcingRadar({
                     </div>
                   </div>
                 )
-              })}
+              }) : (
+                <div className="empty-state">
+                  <strong>No leads match the current filters.</strong>
+                  <p>Clear filters or add a fresh source lead.</p>
+                  <div className="row-wrap">
+                    <button className="btn" type="button" onClick={() => {
+                      setCountyFilter('All')
+                      setSourceFilter('All')
+                      setQuickFilter('all')
+                      setSearchText('')
+                    }}>
+                      Clear Filters
+                    </button>
+                    <button className="btn btn-success" type="button" onClick={() => setSourceHubTab('facebook')}>
+                      Import Facebook
+                    </button>
+                    <button className="btn btn-info" type="button" onClick={() => setSourceHubTab('scan')}>
+                      Scan Public Sources
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </section>
+          </>
+        )}
       </div>
     )
   }
@@ -1088,7 +1054,7 @@ export function LocalSourcingRadar({
     })
 
     return (
-      <section className="card form-grid">
+      <section className="card form-grid" ref={facebookImportRef}>
         <h3>Facebook URL Autoload (Recommended)</h3>
         <p className="span-2">Compliant workflow: copy listing details from Facebook Marketplace only. No automated scraping.</p>
         <p className="span-2 muted-copy">Only this is required: paste URL and click Autoload Selected URLs. Everything below is optional manual entry.</p>
@@ -1115,20 +1081,20 @@ export function LocalSourcingRadar({
           URLs detected: {parsePastedUrls(facebookSelectedUrls).length}. You can paste plain links, comma-separated links, or markdown links.
         </p>
         <div className="span-2 row-wrap">
-          <button className="btn btn-success" type="button" onClick={() => void importSelectedFacebookListings()} disabled={facebookImporting}>
-            {facebookImporting ? 'Autoloading...' : 'Autoload Selected URLs'}
-          </button>
           <a className="btn btn-info" href={facebookSearchUrl} target="_blank" rel="noreferrer">
             Open Facebook Golf Search
           </a>
+          <button className="btn btn-success" type="button" onClick={() => void importSelectedFacebookListings()} disabled={facebookImporting}>
+            {facebookImporting ? 'Autoloading...' : 'Autoload Selected URLs'}
+          </button>
           {facebookImportMessage && <span className="muted-copy">{facebookImportMessage}</span>}
         </div>
         <div className="span-2 row-wrap">
           <button className="btn" type="button" onClick={() => setShowAdvancedManual((prev) => !prev)}>
             {showAdvancedManual ? 'Hide optional manual fields' : 'Show optional manual fields'}
           </button>
-          <button className="btn" type="button" onClick={() => onNavigate('/sourcing')}>
-            Back to Radar
+          <button className="btn" type="button" onClick={() => scrollToHubSection('top')}>
+            Back to Top
           </button>
         </div>
 
@@ -1256,8 +1222,8 @@ export function LocalSourcingRadar({
             )}
 
             <div className="row-wrap" style={{ marginTop: '8px' }}>
-              <button className="btn" type="button" onClick={() => onNavigate('/sourcing')}>
-                View added leads in Source Deals
+              <button className="btn" type="button" onClick={() => scrollToHubSection('top')}>
+                Back to Top
               </button>
             </div>
           </section>
@@ -1270,10 +1236,10 @@ export function LocalSourcingRadar({
     const preview = scanResults && scanResults.length > 0 ? scanResults : saveCraigslistSearch()
     return (
       <div className="stack-lg">
-        <section className="card form-grid">
-          <h3>Facebook Marketplace + Craigslist Connector</h3>
-          <p className="span-2">Search now auto-adds deals only from Facebook Marketplace and Craigslist. Shipping-only deals are excluded automatically.</p>
-          <p className="muted-copy span-2">This scan ignores manual source selection and searches all enabled public sources automatically.</p>
+        <section className="card form-grid" ref={publicSourcesRef}>
+          <h3>Facebook Marketplace + Scan Sources</h3>
+          <p className="span-2">Search now auto-adds local deals from all enabled public sources. Shipping-only deals are excluded automatically.</p>
+          <p className="muted-copy span-2">Enabled scan sources: {enabledPublicSourceNames.length > 0 ? enabledPublicSourceNames.join(', ') : 'none selected in settings'}.</p>
           {scanMessage && <p className="span-2 muted-copy">{scanMessage}</p>}
           <label>
             County / region
@@ -1304,11 +1270,21 @@ export function LocalSourcingRadar({
             <button className="btn btn-primary" type="button" onClick={() => void handleCraigslistScan()} disabled={scanning}>
               {scanning ? 'Searching...' : 'Search now'}
             </button>
-            <button className="btn btn-secondary" type="button">
+            <button
+              className="btn btn-secondary"
+              type="button"
+              onClick={() => {
+                onUpdateSettings({
+                  ...settings,
+                  keyword_rules: Array.from(new Set([craigslistForm.keyword, ...settings.keyword_rules])),
+                })
+                setScanMessage(`Saved search: ${craigslistForm.keyword} in ${craigslistForm.county}.`)
+              }}
+            >
               Save search
             </button>
-            <button className="btn" type="button" onClick={() => onNavigate('/sourcing')}>
-              Back to Radar
+            <button className="btn" type="button" onClick={() => scrollToHubSection('top')}>
+              Back to Top
             </button>
           </div>
         </section>
@@ -1491,7 +1467,7 @@ export function LocalSourcingRadar({
               {copiedLeadId === currentLead.id ? 'Copied' : 'Copy seller message'}
             </button>
             <button className="btn btn-primary" type="button" disabled={sold} onClick={() => sendDirectMessage('seller')}>
-              Send seller message from app
+              Log seller follow-up
             </button>
           </div>
 
@@ -1523,7 +1499,7 @@ export function LocalSourcingRadar({
               {copiedLeadId === currentLead.id ? 'Copied' : 'Copy buyer message'}
             </button>
             <button className="btn btn-primary" type="button" onClick={() => sendDirectMessage('buyer')}>
-              Send buyer message from app
+              Log buyer follow-up
             </button>
           </div>
         </section>
@@ -1595,9 +1571,87 @@ export function LocalSourcingRadar({
     )
   }
 
+  function renderFollowups() {
+    return (
+      <div className="stack-lg">
+        <section className="card">
+          <h3>Follow-ups</h3>
+          <p>Work today's sourcing queue without digging through every lead.</p>
+          <div className="workflow-grid" style={{ marginTop: '12px' }}>
+            <article className="workflow-card">
+              <p className="muted-copy">Photo requests</p>
+              <strong>{noPhotoLeads.length}</strong>
+              <p>Ask for exact seller photos before any buy decision.</p>
+              <button className="btn btn-primary" type="button" onClick={() => {
+                setQuickFilter('no-photo')
+                setSourceHubTab('inbox')
+              }}>
+                Queue no-photo leads
+              </button>
+            </article>
+            <article className="workflow-card">
+              <p className="muted-copy">Due today</p>
+              <strong>{followupsDueToday.length}</strong>
+              <p>Message sellers and keep hot deals moving.</p>
+              <button className="btn" type="button" onClick={() => {
+                setQuickFilter('due')
+                setSourceHubTab('inbox')
+              }}>
+                Queue due follow-ups
+              </button>
+            </article>
+            <article className="workflow-card">
+              <p className="muted-copy">Best margins</p>
+              <strong>{strongBuyOpenLeads.length}</strong>
+              <p>Prioritize strong buys before lower-confidence leads.</p>
+              <button className="btn btn-success" type="button" onClick={() => {
+                setQuickFilter('strong-buy')
+                setSourceHubTab('inbox')
+              }}>
+                Queue strong buys
+              </button>
+            </article>
+          </div>
+        </section>
+
+        <section className="card">
+          <h4>Due Today</h4>
+          <div className="stack-sm">
+            {followupsDueToday.length > 0 ? (
+              followupsDueToday.map((followup) => {
+                const lead = leads.find((item) => item.id === followup.lead_id)
+                return (
+                  <button key={followup.id} className="deal-card compact" onClick={() => onNavigate(`/sourcing/lead/${followup.lead_id}`)}>
+                    <strong>{lead?.title ?? 'Lead'}</strong>
+                    <p>{followup.followup_type.replaceAll('_', ' ')}</p>
+                    <p>Due {followup.due_date}</p>
+                    {lead && <p className="muted-copy">{lead.location_text} - {currency(lead.asking_price)} asking</p>}
+                  </button>
+                )
+              })
+            ) : (
+              <div className="empty-state">
+                <strong>No follow-ups are due today.</strong>
+                <p>Use this time to scan for fresh local pickup deals or import a Facebook listing you already found.</p>
+                <div className="row-wrap">
+                  <button className="btn btn-success" type="button" onClick={() => setSourceHubTab('facebook')}>
+                    Import Facebook
+                  </button>
+                  <button className="btn btn-info" type="button" onClick={() => setSourceHubTab('scan')}>
+                    Scan Public Sources
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
+    )
+  }
+
   function renderSettings() {
     return (
-      <section className="card form-grid">
+      <section className="card form-grid" ref={settingsRef}>
           <h3>Sourcing Settings</h3>
         <label>
           Home/base zip code
@@ -1647,26 +1701,17 @@ export function LocalSourcingRadar({
     )
   }
 
+  if (view === 'lead') {
+    return <div className="stack-lg">{renderLeadDetail()}</div>
+  }
+
   return (
     <div className="stack-lg">
-      <section className="row-wrap">
-        <button className="btn btn-primary" onClick={() => onNavigate('/sourcing')}>Dashboard</button>
-        <button className="btn btn-success" onClick={() => onNavigate('/sourcing/add-facebook')}>Add Facebook</button>
-        <button className="btn btn-info" onClick={() => onNavigate('/sourcing/craigslist')}>Craigslist</button>
-        <button className="btn btn-secondary" onClick={() => onNavigate(`/sourcing/lead/${selectedLead?.id ?? ''}`)}>Lead Detail</button>
-        <button className="btn btn-outline" onClick={() => onNavigate('/sourcing/settings')}>Settings</button>
-      </section>
-      <section className="card">
-        <p>
-          This tracker focuses only on Facebook Marketplace and Craigslist golf club deals in the Long Island, NYC, Westchester, and nearby tristate area. The goal is to find local pickup or delivery opportunities with strong resale potential.
-        </p>
-      </section>
-
-      {view === 'dashboard' && renderDashboard()}
-      {view === 'add-facebook' && renderFacebookImport()}
-      {view === 'craigslist' && renderCraigslist()}
-      {view === 'lead' && renderLeadDetail()}
-      {view === 'settings' && renderSettings()}
+      {renderDashboard()}
+      {sourceHubTab === 'facebook' && renderFacebookImport()}
+      {sourceHubTab === 'scan' && renderCraigslist()}
+      {sourceHubTab === 'followups' && renderFollowups()}
+      {sourceHubTab === 'settings' && renderSettings()}
     </div>
   )
 }

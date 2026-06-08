@@ -68,12 +68,12 @@ function getRouteFromPath(pathname: string): AppRoute {
 
   if (normalized === '/sourcing') return { page: 'sourcing-radar', sourcingView: 'dashboard' }
   if (normalized === '/source-deals') return { page: 'sourcing-radar', sourcingView: 'dashboard' }
-  if (normalized === '/source-deals/add-facebook') return { page: 'sourcing-radar', sourcingView: 'add-facebook' }
-  if (normalized === '/source-deals/craigslist') return { page: 'sourcing-radar', sourcingView: 'craigslist' }
-  if (normalized === '/source-deals/settings') return { page: 'sourcing-radar', sourcingView: 'settings' }
-  if (normalized === '/sourcing/add-facebook') return { page: 'sourcing-radar', sourcingView: 'add-facebook' }
-  if (normalized === '/sourcing/craigslist') return { page: 'sourcing-radar', sourcingView: 'craigslist' }
-  if (normalized === '/sourcing/settings') return { page: 'sourcing-radar', sourcingView: 'settings' }
+  if (normalized === '/source-deals/add-facebook') return { page: 'sourcing-radar', sourcingView: 'dashboard' }
+  if (normalized === '/source-deals/craigslist') return { page: 'sourcing-radar', sourcingView: 'dashboard' }
+  if (normalized === '/source-deals/settings') return { page: 'sourcing-radar', sourcingView: 'dashboard' }
+  if (normalized === '/sourcing/add-facebook') return { page: 'sourcing-radar', sourcingView: 'dashboard' }
+  if (normalized === '/sourcing/craigslist') return { page: 'sourcing-radar', sourcingView: 'dashboard' }
+  if (normalized === '/sourcing/settings') return { page: 'sourcing-radar', sourcingView: 'dashboard' }
 
   const leadMatch = normalized.match(/^\/sourcing\/lead\/([^/]+)$/)
   if (leadMatch) return { page: 'sourcing-radar', sourcingView: 'lead', leadId: leadMatch[1] }
@@ -107,14 +107,8 @@ function getRouteFromPath(pathname: string): AppRoute {
 function getPathFromRoute(route: AppRoute): string {
   if (route.page === 'sourcing-radar') {
     switch (route.sourcingView) {
-      case 'add-facebook':
-        return '/source-deals/add-facebook'
-      case 'craigslist':
-        return '/source-deals/craigslist'
       case 'lead':
         return route.leadId ? `/sourcing/lead/${route.leadId}` : '/source-deals'
-      case 'settings':
-        return '/source-deals/settings'
       default:
         return '/source-deals'
     }
@@ -275,9 +269,10 @@ function App() {
   const [fetchingDeals, setFetchingDeals] = useState(false)
   const [apiReady, setApiReady] = useState(false)
 
+  const isLocalDevHost = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost'
   const apiBase =
     import.meta.env.VITE_API_BASE ??
-    (window.location.hostname === '127.0.0.1' && window.location.port === '5176'
+    (isLocalDevHost
       ? 'http://127.0.0.1:3001'
       : '')
 
@@ -299,29 +294,33 @@ function App() {
 
   // Always remove fake/test Strong Buy leads and keep related records in sync.
   useEffect(() => {
-    setGolfLeads((prev) => {
-      const cleaned = removeFakeStrongBuyLeads(prev)
-      if (cleaned.length === prev.length) return prev
+    queueMicrotask(() => {
+      setGolfLeads((prev) => {
+        const cleaned = removeFakeStrongBuyLeads(prev)
+        if (cleaned.length === prev.length) return prev
 
-      const allowedLeadIds = new Set(cleaned.map((lead) => lead.id))
-      setGolfLeadItems((items) => items.filter((item) => allowedLeadIds.has(item.lead_id)))
-      setLeadFollowups((followups) => followups.filter((item) => allowedLeadIds.has(item.lead_id)))
-      return cleaned
+        const allowedLeadIds = new Set(cleaned.map((lead) => lead.id))
+        setGolfLeadItems((items) => items.filter((item) => allowedLeadIds.has(item.lead_id)))
+        setLeadFollowups((followups) => followups.filter((item) => allowedLeadIds.has(item.lead_id)))
+        return cleaned
+      })
     })
-  }, [])
+  }, [apiBase])
 
   // Once a real inventory item exists, strip starter demo records from leads/sales.
   useEffect(() => {
     if (inventory.length === 0) return
 
-    setLeads((prev) => {
-      const next = prev.filter((lead) => !DEMO_LEAD_TITLES.has(lead.title))
-      return next.length === prev.length ? prev : next
-    })
+    queueMicrotask(() => {
+      setLeads((prev) => {
+        const next = prev.filter((lead) => !DEMO_LEAD_TITLES.has(lead.title))
+        return next.length === prev.length ? prev : next
+      })
 
-    setSales((prev) => {
-      const next = prev.filter((sale) => !DEMO_SALE_ITEM_NAMES.has(sale.itemName))
-      return next.length === prev.length ? prev : next
+      setSales((prev) => {
+        const next = prev.filter((sale) => !DEMO_SALE_ITEM_NAMES.has(sale.itemName))
+        return next.length === prev.length ? prev : next
+      })
     })
   }, [inventory.length])
 
@@ -329,7 +328,28 @@ function App() {
     const onPopState = () => setRoute(getRouteFromPath(window.location.pathname))
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
+  }, [apiBase])
+
+  useEffect(() => {
+    const previous = window.history.scrollRestoration
+    window.history.scrollRestoration = 'manual'
+    return () => {
+      window.history.scrollRestoration = previous
+    }
   }, [])
+
+  useEffect(() => {
+    const canonicalPath = getPathFromRoute(route)
+    if (window.location.pathname !== canonicalPath) {
+      window.history.replaceState({}, '', canonicalPath)
+    }
+  }, [route])
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+    const mainArea = document.querySelector('.main-area') as HTMLElement | null
+    mainArea?.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+  }, [route.page, route.sourcingView, route.leadId])
 
   useEffect(() => {
     let cancelled = false
@@ -397,7 +417,7 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [apiBase])
 
   useEffect(() => {
     if (!apiReady) return
@@ -438,9 +458,18 @@ function App() {
     golfLeadItems,
     leadFollowups,
     sourcingSettings,
+    apiBase,
   ])
 
   const stats = useMemo(() => calculateDashboardStats(leads, inventory, sales), [leads, inventory, sales])
+  const hasDemoData = useMemo(
+    () =>
+      leads.some((lead) => DEMO_LEAD_TITLES.has(lead.title)) ||
+      sales.some((sale) => DEMO_SALE_ITEM_NAMES.has(sale.itemName)) ||
+      inventory.some((item) => item.itemName.includes('Vokey SM8')) ||
+      golfLeads.length > 0,
+    [golfLeads.length, inventory, leads, sales],
+  )
   const sourcingSummary = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10)
     return {
@@ -469,16 +498,7 @@ function App() {
     'value-guide': 'Brand Value Guide',
     settings: 'Settings',
     audit: 'Developer Audit',
-    'sourcing-radar':
-      route.sourcingView === 'add-facebook'
-        ? 'Source Deals'
-        : route.sourcingView === 'craigslist'
-          ? 'Source Deals'
-          : route.sourcingView === 'lead'
-            ? 'Source Deal Detail'
-            : route.sourcingView === 'settings'
-              ? 'Sourcing Settings'
-              : 'Source Deals',
+    'sourcing-radar': route.sourcingView === 'lead' ? 'Sourcing Lead Detail' : 'Sourcing',
     'sourcing-add-facebook': 'Manual Facebook Import',
     'sourcing-craigslist': 'Craigslist Monitor',
     'sourcing-lead': 'Lead Detail',
@@ -503,15 +523,9 @@ function App() {
     settings: 'Set profile, defaults, and backup preferences for a consistent team workflow.',
     audit: 'Verify route-by-route completeness, mobile behavior, and production readiness.',
     'sourcing-radar':
-      route.sourcingView === 'add-facebook'
-        ? 'Add marketplace leads manually with compliant data capture and photo transparency.'
-        : route.sourcingView === 'craigslist'
-          ? 'Scan enabled public sources and prioritize leads with the best local margin potential.'
-          : route.sourcingView === 'lead'
-            ? 'Review deal photos, risk, outreach, and next actions in one place.'
-            : route.sourcingView === 'settings'
-              ? 'Configure sourcing radius, score thresholds, and source enablement rules.'
-              : 'Find and triage local golf deals quickly using margin-first sourcing filters.',
+      route.sourcingView === 'lead'
+        ? 'Review deal photos, risk, outreach, and next actions in one place.'
+        : 'Find and triage local golf deals quickly using margin-first sourcing filters.',
     'sourcing-add-facebook': 'Add marketplace leads manually with compliant data capture and photo transparency.',
     'sourcing-craigslist': 'Scan enabled public sources and prioritize leads with the best local margin potential.',
     'sourcing-lead': 'Review deal photos, risk, outreach, and next actions in one place.',
@@ -601,6 +615,15 @@ function App() {
 
   function addSource(source: Source) {
     setSources((prev) => [source, ...prev])
+  }
+
+  function startCleanWorkspace() {
+    setLeads([])
+    setInventory([])
+    setSales([])
+    setGolfLeads([])
+    setGolfLeadItems([])
+    setLeadFollowups([])
   }
 
   function saveRadarLead(lead: GolfLeadRadar, items: GolfLeadItem[] = [], followups: LeadFollowup[] = []) {
@@ -810,17 +833,14 @@ function App() {
         return (
           <Dashboard
             stats={stats}
-            settings={settings}
             sourcingSummary={sourcingSummary}
             onAddLead={() => navigatePage('lead-form')}
             onOpenSourcing={() => navigatePage('sourcing-radar')}
-            onOpenIdentify={() => navigatePage('club-flip')}
-            onOpenListings={() => navigatePage('listings')}
-            onOpenCsvExport={() => navigatePage('csv-export')}
             onOpenValueGuide={() => navigatePage('lead-analyzer')}
-            onQuickSaveLead={addLead}
             onFetchDeals={fetchDealsNow}
             fetchingDeals={fetchingDeals}
+            hasDemoData={hasDemoData}
+            onStartClean={startCleanWorkspace}
           />
         )
       case 'lead-form':
@@ -832,7 +852,15 @@ function App() {
           <LeadAnalyzer leads={leads} onUpdateLead={updateLead} onMoveToInventory={moveLeadToInventory} />
         )
       case 'inventory':
-        return <Inventory inventory={inventory} onUpdateInventory={updateInventory} onCreateFromBundle={createFromBundle} />
+        return (
+          <Inventory
+            inventory={inventory}
+            onUpdateInventory={updateInventory}
+            onCreateFromBundle={createFromBundle}
+            onOpenValueChecker={() => navigatePage('lead-analyzer')}
+            onOpenListings={() => navigatePage('listings')}
+          />
+        )
       case 'listings':
         return <ListingGenerator inventory={inventory} onUpdateInventory={updateInventory} />
       case 'sales':
@@ -897,6 +925,7 @@ function App() {
       businessName={settings.businessName}
       stats={stats}
       onQuickAdd={() => navigatePage('lead-form')}
+      onFindDeals={() => navigatePage('sourcing-radar')}
     >
       {renderPage()}
     </Layout>

@@ -79,21 +79,8 @@ export function ListingGenerator({ inventory, onUpdateInventory }: ListingGenera
         <textarea value={`${listing.description}\n\n${conditionNotes}`} readOnly rows={12} />
       </section>
 
-      <section className="card">
-        <h4>Photo Guide</h4>
-        <ol className="plain-list">
-          <li>Full club</li>
-          <li>Face</li>
-          <li>Sole</li>
-          <li>Shaft label</li>
-          <li>Grip</li>
-          <li>Damage if any</li>
-          <li>Clean angled cover photo</li>
-        </ol>
-      </section>
-
       <div className="row-wrap">
-        <button className="btn btn-primary">Generate Listing</button>
+        <span className="badge badge-good">Listing updates automatically</span>
         <button className="btn" onClick={() => void navigator.clipboard.writeText(listing.title)}>
           Copy Title
         </button>

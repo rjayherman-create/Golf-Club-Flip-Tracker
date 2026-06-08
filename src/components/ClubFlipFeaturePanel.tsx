@@ -167,11 +167,14 @@ export function ClubFlipFeaturePanel({ onConfirmToValue }: ClubFlipFeaturePanelP
     <div className="stack-lg">
       <section className="hero-card">
         <h3>Identify From Photo</h3>
-        <p>Upload key photos, detect club details with confidence, confirm/edit, then move into Value Checker.</p>
+        <p>Upload key photos, identify club details on the server, confirm/edit, then move into Value Checker.</p>
+        <div className="business-rule-banner">
+          <strong>Status:</strong> AI photo identification uses the local API. If `OPENAI_API_KEY` is not configured, the app returns a fallback result so the workflow can still be tested.
+        </div>
       </section>
 
       <section className="card form-grid">
-        <h4>1. Photo Upload + OCR Club ID</h4>
+        <h4>1. Photo Upload + Club ID</h4>
         <label>
           Club head photo
           <input type="file" accept="image/*" onChange={(event) => setHeadPhoto(event.target.files?.[0] ?? null)} />
@@ -210,15 +213,15 @@ export function ClubFlipFeaturePanel({ onConfirmToValue }: ClubFlipFeaturePanelP
           <>
             <label>
               Brand
-              <input value={identification.brand} readOnly />
+              <input value={identification.brand} onChange={(event) => setIdentification({ ...identification, brand: event.target.value })} />
             </label>
             <label>
               Model
-              <input value={identification.model} readOnly />
+              <input value={identification.model} onChange={(event) => setIdentification({ ...identification, model: event.target.value })} />
             </label>
             <label>
               Type
-              <input value={identification.clubType} readOnly />
+              <input value={identification.clubType} onChange={(event) => setIdentification({ ...identification, clubType: event.target.value })} />
             </label>
             <label>
               Confidence
@@ -244,9 +247,7 @@ export function ClubFlipFeaturePanel({ onConfirmToValue }: ClubFlipFeaturePanelP
               />
             </label>
             <div className="span-2 row-wrap">
-              <button className="btn" type="button">
-                Edit Detection
-              </button>
+              <span className="badge badge-good">Detected fields are editable</span>
               <button className="btn btn-primary" type="button" onClick={() => onConfirmToValue?.()}>
                 Confirm and Open Value Checker
               </button>

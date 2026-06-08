@@ -1,60 +1,42 @@
-# React + TypeScript + Vite
+# Golf Flip Tracker
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Golf Flip Tracker is a standalone local-first app for finding used golf club deals, checking resale value, tracking inventory, creating listings, and recording profit.
 
-Currently, two official plugins are available:
+## Run Locally
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```bash
+npm install
+npm run server
+npm run dev
+```
 
-## React Compiler
+The local API runs on `http://127.0.0.1:3001`. The Vite UI usually runs on `http://127.0.0.1:5173`, or the next open Vite port.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Production Build
 
-## Expanding the ESLint configuration
+```bash
+npm run build
+npm start
+```
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+`npm start` serves the built app and API from the local Node server.
 
-```js
-export default defineConfig([
-  # Golf Flip Tracker
+## Main Routes
 
-  Golf Flip Tracker is a local-first tool for finding used golf clubs and bags, pricing deals, tracking inventory, and managing sales.
+- `/` dashboard and quick actions
+- `/source-deals` sourcing hub for lead inbox, Facebook import, public scans, follow-ups, and sourcing settings
+- `/add-club` structured club/deal entry
+- `/identify-from-photo` photo-based club identification workflow
+- `/value-checker` manual comp and buy-threshold calculator
+- `/inventory` inventory and bundle tracking
+- `/listings` Facebook listing generator
+- `/sold-profit` sale and profit tracking
+- `/csv-export` reseller report downloads
+- `/settings` profile, region, defaults, backups, and roadmap
 
-  ## Run locally
+## Notes
 
-  ```bash
-  npm install
-  npm run server
-  npm run dev
-  ```
-
-  The app uses a local API server on `http://127.0.0.1:3001` and Vite for the UI.
-
-  ## Live-ready build
-
-  ```bash
-  npm run build
-  npm run preview
-  ```
-
-  Path-based routes are supported through the SPA fallback in `public/_redirects`, so deep links like `/sourcing`, `/lead-form`, and `/lead-analyzer` load correctly on static hosts.
-
-  ## Main routes
-
-  - `/` dashboard
-  - `/sourcing` local sourcing radar
-  - `/lead-form` add deal
-  - `/lead-analyzer` analyze deal
-  - `/inventory` inventory
-  - `/listings` listing generator
-  - `/sales` sales tracker
-  - `/sources` source map / source list
-  - `/value-guide` brand value guide
-  - `/settings` settings
-
-  ## Notes
-
-  - Manual Facebook imports stay separate from automated public-source radar.
-  - The dashboard now puts local sourcing first, followed by add deal and analyze.
-      reactX.configs['recommended-typescript'],
+- Sourcing is the primary workflow. Start in `/source-deals`, verify photos and comps, then move good buys into inventory.
+- Facebook import is manual and compliant: paste listing URLs or details rather than scraping.
+- Photo identification uses the local API. If `OPENAI_API_KEY` is missing, the server returns a fallback result so the flow remains testable.
+- Data is stored locally in browser storage and mirrored to `data/db.json` when the API server is running.
