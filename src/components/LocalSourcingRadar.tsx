@@ -427,6 +427,21 @@ export function LocalSourcingRadar({
   const currentLeadMessage =
     currentLead && lastSentMessage.leadId === currentLead.id ? lastSentMessage.message : ''
 
+  const facebookSearchUrl = useMemo(() => {
+    const sourceBase =
+      sources.find((source) => source.source_type === 'facebook_manual')?.base_url ||
+      'https://www.facebook.com/marketplace/'
+
+    try {
+      const url = new URL(sourceBase)
+      url.pathname = '/marketplace/search/'
+      url.searchParams.set('query', 'golf clubs')
+      return url.toString()
+    } catch {
+      return 'https://www.facebook.com/marketplace/search/?query=golf%20clubs'
+    }
+  }, [sources])
+
   function sendDirectMessage(target: 'seller' | 'buyer') {
     if (!currentLead) return
 
@@ -982,6 +997,9 @@ export function LocalSourcingRadar({
           <button className="btn btn-success" type="button" onClick={() => void importSelectedFacebookListings()} disabled={facebookImporting}>
             {facebookImporting ? 'Autoloading...' : 'Autoload Selected URLs'}
           </button>
+          <a className="btn btn-info" href={facebookSearchUrl} target="_blank" rel="noreferrer">
+            Open Facebook Golf Search
+          </a>
           {facebookImportMessage && <span className="muted-copy">{facebookImportMessage}</span>}
         </div>
         <label className="span-2">
