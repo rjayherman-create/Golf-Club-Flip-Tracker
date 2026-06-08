@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { DashboardStats, PageKey } from '../types'
 import { Sidebar } from './Sidebar'
+import { TutorialSystem } from './TutorialSystem'
 
 interface LayoutProps {
   activePage: PageKey
@@ -56,14 +57,14 @@ export function Layout({
 
       <main className="main-area">
         <header className="page-header">
-          <div>
+          <div data-tour-dashboard="main">
             <p className="eyebrow">Protect your margin before buying.</p>
             <h2>{pageTitle}</h2>
             <p className="page-subtitle">{pageDescription}</p>
           </div>
           <div className="header-actions">
             <div className="score-pill">Today's Sourcing Score: {sourcingScore}</div>
-            <button className="quick-btn" onClick={onQuickAdd}>
+            <button className="quick-btn" data-tour-primary-action="add" onClick={onQuickAdd}>
               Quick Add Club
             </button>
           </div>
@@ -83,6 +84,8 @@ export function Layout({
           </div>
           <p>© {new Date().getFullYear()} {businessName || 'Golf Flip Tracker'}. All rights reserved.</p>
         </footer>
+
+        <TutorialSystem appName="Golf Flip Tracker" activePage={activePage} onGoDashboard={() => setActivePage('dashboard')} />
       </main>
     </div>
   )

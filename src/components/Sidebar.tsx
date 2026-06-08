@@ -39,6 +39,8 @@ export function Sidebar({
           <button
             key={item.key}
             className={`nav-btn ${activePage === item.key ? 'active' : ''}`}
+            data-tour-nav={item.key === 'dashboard' ? 'main' : undefined}
+            data-tour-reports={item.key === 'csv-export' ? 'reports' : undefined}
             onClick={() => {
               onNavigate(item.key)
               onClose?.()
