@@ -723,6 +723,7 @@ async function buildFacebookImportedLeads(db, urls, sourceId) {
     let description = 'Imported from manually selected Facebook listing URL.'
     let imageUrls = []
     let hasFetchedMetadata = false
+    let listingReachable = false
 
     try {
       const response = await fetch(listingUrl, {
@@ -734,6 +735,7 @@ async function buildFacebookImportedLeads(db, urls, sourceId) {
       })
 
       if (response.ok) {
+        listingReachable = true
         const html = await response.text()
         const ogTitle = extractMetaContent(html, 'og:title')
         const ogDescription = extractMetaContent(html, 'og:description')
@@ -776,10 +778,19 @@ async function buildFacebookImportedLeads(db, urls, sourceId) {
       brand !== 'Unknown' ||
       clubType !== 'unknown' ||
       askingPrice > 0
+    const facebookItemIdMatch = String(listingUrl).match(/facebook\.com\/marketplace\/item\/(\d+)/i)
+    const isValidFacebookItemUrl = Boolean(facebookItemIdMatch)
 
-    if (!hasFetchedMetadata || !hasMeaningfulListingData || !hasGolfSignal) {
+    if (!isValidFacebookItemUrl || !listingReachable) {
       unverifiedSkipped += 1
       continue
+    }
+
+    // Facebook often blocks metadata for non-authenticated fetches; keep valid item URLs instead of skipping.
+    if ((!hasFetchedMetadata || !hasMeaningfulListingData || !hasGolfSignal) && isValidFacebookItemUrl) {
+      const itemId = facebookItemIdMatch?.[1] ?? 'unknown'
+      title = `Facebook listing #${itemId}`
+      description = `Imported from valid Facebook item URL. Metadata fetch was limited; open listing to confirm details.`
     }
 
     const template = {
