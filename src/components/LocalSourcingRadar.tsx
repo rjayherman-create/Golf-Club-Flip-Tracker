@@ -638,14 +638,24 @@ export function LocalSourcingRadar({
     setFacebookImportMessage('Importing selected Facebook listings...')
 
     try {
-      const result = await onImportFacebookListings(urls, facebookForm.sourceId, facebookSelectedUrls)
+      const rawImportText = [
+        facebookSelectedUrls,
+        facebookForm.title && `Title: ${facebookForm.title}`,
+        facebookForm.askingPrice && `Price: $${facebookForm.askingPrice}`,
+        facebookForm.locationText && `Location: ${facebookForm.locationText}`,
+        facebookForm.description,
+        facebookForm.photoUrls,
+      ]
+        .filter(Boolean)
+        .join('\n')
+      const result = await onImportFacebookListings(urls, facebookForm.sourceId, rawImportText)
       const imported = result.imported
       setLastImportedLeads(imported)
       setLastImportSummary(result.summary)
 
       if (imported.length === 0) {
         setFacebookImportMessage(
-          `No verified real listings were imported. Skipped ${result.summary.skipped}. Try public listing URLs with visible title/price/photos.`,
+          `No verified real listings were imported. Skipped ${result.summary.skipped}. Paste the Marketplace URL plus copied listing text so price, location, and photo links can be read.`,
         )
         return
       }
@@ -664,7 +674,7 @@ export function LocalSourcingRadar({
       }
 
       setFacebookImportMessage(
-        `Autoload complete: ${result.summary.imported} real listing${result.summary.imported > 1 ? 's' : ''} imported, ${result.summary.skipped} skipped.`,
+        `Import complete: ${result.summary.imported} real listing${result.summary.imported > 1 ? 's' : ''} imported, ${result.summary.skipped} skipped. Open a result below to verify price, location, and photos.`,
       )
       setFacebookSelectedUrls('')
     } finally {
@@ -1055,37 +1065,37 @@ export function LocalSourcingRadar({
 
     return (
       <section className="card form-grid" ref={facebookImportRef}>
-        <h3>Facebook URL Autoload (Recommended)</h3>
+        <h3>Facebook Import (Recommended)</h3>
         <p className="span-2">Compliant workflow: copy listing details from Facebook Marketplace only. No automated scraping.</p>
-        <p className="span-2 muted-copy">Only this is required: paste URL and click Autoload Selected URLs. Everything below is optional manual entry.</p>
+        <p className="span-2 muted-copy">Best result: paste the listing URL plus copied listing text. URL-only imports can be limited when Facebook hides price, location, and photos.</p>
         <p className="span-2 muted-copy">This page does not scan by itself. It only imports the Facebook URL(s) you paste below.</p>
         <section className="card span-2">
           <h4>Quick steps</h4>
           <ol className="plain-list">
             <li>Open the Facebook listing and copy its URL.</li>
-            <li>Paste URL(s) below, one per line.</li>
-            <li>Click Autoload Selected URLs.</li>
+            <li>Copy the visible listing text too when Facebook shows price/location/photos.</li>
+            <li>Paste both below, then click Import Selected URLs.</li>
             <li>Open lead from Autoload Results.</li>
           </ol>
         </section>
         <label className="span-2">
-          Paste Facebook listing URL(s) here (required)
+          Paste Facebook listing URL(s) and copied listing text
           <textarea
-            rows={4}
+            rows={7}
             value={facebookSelectedUrls}
             onChange={(event) => setFacebookSelectedUrls(event.target.value)}
-            placeholder="https://www.facebook.com/marketplace/item/..."
+            placeholder={'https://www.facebook.com/marketplace/item/...\nTaylorMade Stealth Driver\n$180\nHuntington, NY\nPhoto/image URL if Facebook copied one'}
           />
         </label>
         <p className="span-2 muted-copy">
-          URLs detected: {parsePastedUrls(facebookSelectedUrls).length}. You can paste plain links, comma-separated links, or markdown links.
+          URLs detected: {parsePastedUrls(facebookSelectedUrls).length}. The importer now reads pasted price, location, description, and photo URLs from this box.
         </p>
         <div className="span-2 row-wrap">
           <a className="btn btn-info" href={facebookSearchUrl} target="_blank" rel="noreferrer">
             Open Facebook Golf Search
           </a>
           <button className="btn btn-success" type="button" onClick={() => void importSelectedFacebookListings()} disabled={facebookImporting}>
-            {facebookImporting ? 'Autoloading...' : 'Autoload Selected URLs'}
+            {facebookImporting ? 'Importing...' : 'Import Selected URLs'}
           </button>
           {facebookImportMessage && <span className="muted-copy">{facebookImportMessage}</span>}
         </div>

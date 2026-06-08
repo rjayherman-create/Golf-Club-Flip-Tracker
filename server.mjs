@@ -285,9 +285,9 @@ function parseRssItems(xmlText) {
 
 function parseCraigslistPrice(...values) {
   for (const value of values) {
-    const priceMatch = String(value ?? '').match(/\$(\d{2,5})\b/)
+    const priceMatch = String(value ?? '').match(/\$\s*([0-9][0-9,]{1,7})(?:\.\d{2})?\b/)
     if (!priceMatch) continue
-    const parsed = Number(priceMatch[1])
+    const parsed = Number(priceMatch[1].replace(/,/g, ''))
     if (Number.isFinite(parsed) && parsed > 0) return parsed
   }
   return 0
@@ -327,7 +327,7 @@ function extractFacebookTitleAndLocation(html) {
 function parseFacebookPasteContext(rawText) {
   const text = String(rawText ?? '').replace(/\r/g, '\n')
   if (!text.trim()) {
-    return { title: '', description: '', locationText: '', askingPrice: 0 }
+    return { title: '', description: '', locationText: '', askingPrice: 0, imageUrls: [] }
   }
 
   const lines = text
@@ -335,11 +335,26 @@ function parseFacebookPasteContext(rawText) {
     .map((line) => stripHtml(line).replace(/\s+/g, ' ').trim())
     .filter(Boolean)
 
+  const imageUrls = dedupeUrls(
+    Array.from(text.matchAll(/https?:\/\/[^\s"'<>),\]]+/gi))
+      .map((match) => match[0].replace(/[)>.,;]+$/g, ''))
+      .filter((urlText) => {
+        const value = urlText.toLowerCase()
+        return (
+          /\.(?:jpe?g|png|webp)(?:[?#]|$)/i.test(value) ||
+          /(?:scontent|fbcdn|cdninstagram)\.[^/]+/i.test(value) ||
+          /(?:image|photo|picture|media)/i.test(value)
+        )
+      }),
+  ).filter(looksLikeAdImage)
+
   const title =
     lines.find(
       (line) =>
         !/^https?:\/\//i.test(line) &&
         !/^\$\d+/i.test(line) &&
+        !/^price$/i.test(line) &&
+        !/^location$/i.test(line) &&
         !/^details$/i.test(line) &&
         !/^condition$/i.test(line) &&
         !/^listed\b/i.test(line) &&
@@ -350,7 +365,10 @@ function parseFacebookPasteContext(rawText) {
   const askingPrice = parseCraigslistPrice(text)
   const locationText =
     text.match(/Listed\s+\d+\s+\w+\s+ago\s+in\s+(.+?)(?:\n|$)/i)?.[1]?.trim() ||
-    text.match(/(?:in|\()\s*([A-Za-z .'-]+,\s*(?:New York|NY))\b/i)?.[1]?.trim() ||
+    text.match(/(?:Location|Pickup|Meetup)\s*:?\s*([A-Za-z .'-]+,\s*(?:New York|NY)|[A-Za-z .'-]+\s+NY)\b/i)?.[1]?.trim() ||
+    text.match(/(?:\bin\b|\()\s*([A-Za-z .'-]+,\s*(?:New York|NY))\b/i)?.[1]?.trim() ||
+    lines.find((line) => /^[A-Za-z .'-]+,\s*(?:New York|NY)$/i.test(line)) ||
+    lines.find((line) => /^[A-Za-z .'-]+\s+NY$/i.test(line)) ||
     ''
 
   const detailsIndex = lines.findIndex((line) => /^details$/i.test(line))
@@ -367,6 +385,7 @@ function parseFacebookPasteContext(rawText) {
     description,
     locationText: stripHtml(locationText),
     askingPrice,
+    imageUrls,
   }
 }
 
@@ -768,7 +787,7 @@ async function buildFacebookImportedLeads(db, urls, sourceId, rawText = '') {
   for (const listingUrl of normalizedUrls.slice(0, 20)) {
     let title = pastedContext.title || 'Facebook Marketplace listing'
     let description = pastedContext.description || 'Imported from manually selected Facebook listing URL.'
-    let imageUrls = []
+    let imageUrls = pastedContext.imageUrls ?? []
     let hasFetchedMetadata = false
     let listingReachable = false
 
@@ -790,6 +809,7 @@ async function buildFacebookImportedLeads(db, urls, sourceId, rawText = '') {
         title = stripHtml(ogTitle || pastedContext.title || parsedTitle.listingTitle || title)
         description = stripHtml(ogDescription || description)
         imageUrls = dedupeUrls([
+          ...(pastedContext.imageUrls ?? []),
           ...extractMetaImageUrls(html),
           ...extractImgSrcUrls(html).slice(0, 12),
         ]).filter(looksLikeAdImage)
@@ -822,6 +842,13 @@ async function buildFacebookImportedLeads(db, urls, sourceId, rawText = '') {
     const hasMeaningfulTitle = title !== 'Facebook Marketplace listing'
     const hasMeaningfulDescription = description !== 'Imported from manually selected Facebook listing URL.'
     const hasMeaningfulListingData = hasMeaningfulTitle || hasMeaningfulDescription || imageUrls.length > 0
+    const hasPastedListingData = Boolean(
+      pastedContext.title ||
+      pastedContext.description ||
+      pastedContext.locationText ||
+      pastedContext.askingPrice ||
+      (pastedContext.imageUrls ?? []).length,
+    )
     const hasGolfSignal =
       /golf|driver|putter|wedge|iron|hybrid|fairway|club|bag|set/i.test(mergedText) ||
       brand !== 'Unknown' ||
@@ -830,13 +857,13 @@ async function buildFacebookImportedLeads(db, urls, sourceId, rawText = '') {
     const facebookItemIdMatch = String(listingUrl).match(/facebook\.com\/marketplace\/item\/(\d+)/i)
     const isValidFacebookItemUrl = Boolean(facebookItemIdMatch)
 
-    if (!isValidFacebookItemUrl || !listingReachable) {
+    if (!isValidFacebookItemUrl || (!listingReachable && !hasPastedListingData)) {
       unverifiedSkipped += 1
       continue
     }
 
     // Facebook often blocks metadata for non-authenticated fetches; keep valid item URLs instead of skipping.
-    if ((!hasFetchedMetadata || !hasMeaningfulListingData || !hasGolfSignal) && isValidFacebookItemUrl) {
+    if ((!hasFetchedMetadata || !hasMeaningfulListingData || !hasGolfSignal) && isValidFacebookItemUrl && !hasPastedListingData) {
       const itemId = facebookItemIdMatch?.[1] ?? 'unknown'
       title = `Facebook listing #${itemId}`
       description = `Imported from valid Facebook item URL. Metadata fetch was limited; open listing to confirm details.`
