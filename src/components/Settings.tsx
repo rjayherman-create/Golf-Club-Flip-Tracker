@@ -18,6 +18,21 @@ export function Settings({ settings, onSave }: SettingsProps) {
     <section className="card form-grid">
       <h3>Settings</h3>
       <label>
+        Operating region
+        <select
+          value={draft.operatingRegion}
+          onChange={(e) =>
+            setDraft((prev) => ({
+              ...prev,
+              operatingRegion: e.target.value as AppSettings['operatingRegion'],
+            }))
+          }
+        >
+          <option value="long-island-ny">Long Island / NYC</option>
+          <option value="south-florida">South Florida</option>
+        </select>
+      </label>
+      <label>
         Legal last updated
         <input
           type="date"

@@ -167,6 +167,43 @@ function enforcePremiumTheme(settings: AppSettings): AppSettings {
   }
 }
 
+const REGION_PRESETS = {
+  'long-island-ny': {
+    defaultLocation: 'Long Island, NY',
+    defaultPickupArea: 'Long Island, NY',
+    defaultListingLocation: 'Long Island, NY',
+    sourcing: {
+      base_zip_code: '11747',
+      primary_counties: ['Nassau', 'Suffolk', 'Queens', 'Brooklyn', 'Bronx', 'Manhattan', 'Staten Island', 'Westchester'],
+      secondary_counties: ['North Jersey', 'Fairfield', 'Hudson Valley', 'Rockland', 'Putnam', 'Southern Connecticut'],
+    },
+    craigslistBaseUrl: 'https://newyork.craigslist.org/',
+    estateBaseUrl: 'https://www.estatesales.net/',
+  },
+  'south-florida': {
+    defaultLocation: 'South Florida',
+    defaultPickupArea: 'South Florida',
+    defaultListingLocation: 'South Florida',
+    sourcing: {
+      base_zip_code: '33101',
+      primary_counties: ['Miami-Dade', 'Broward', 'Palm Beach'],
+      secondary_counties: ['Monroe', 'Collier', 'Lee'],
+    },
+    craigslistBaseUrl: 'https://miami.craigslist.org/',
+    estateBaseUrl: 'https://www.estatesales.net/FL/Miami/',
+  },
+} as const
+
+const DEMO_LEAD_TITLES = new Set([
+  'TaylorMade SIM2 Max Driver',
+  'Odyssey White Hot Putter',
+  'Full Golf Bag Mixed Lot',
+  'Old No-name Starter Set',
+  'Vokey SM8 Wedge',
+])
+
+const DEMO_SALE_ITEM_NAMES = new Set(['Odyssey White Hot #5'])
+
 function App() {
   const [route, setRoute] = useState<AppRoute>(() => getRouteFromPath(window.location.pathname))
   const [leads, setLeads] = useState<Lead[]>(() => loadLocal('gft.leads', sampleLeads))
@@ -201,7 +238,11 @@ function App() {
   const [fetchingDeals, setFetchingDeals] = useState(false)
   const [apiReady, setApiReady] = useState(false)
 
-  const apiBase = 'http://127.0.0.1:3001'
+  const apiBase =
+    import.meta.env.VITE_API_BASE ??
+    (window.location.hostname === '127.0.0.1' && window.location.port === '5176'
+      ? 'http://127.0.0.1:3001'
+      : '')
 
   useEffect(() => localStorage.setItem('gft.leads', JSON.stringify(leads)), [leads])
   useEffect(() => localStorage.setItem('gft.inventory', JSON.stringify(inventory)), [inventory])
@@ -218,6 +259,21 @@ function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = 'premium-navy-amber'
   }, [])
+
+  // Once a real inventory item exists, strip starter demo records from leads/sales.
+  useEffect(() => {
+    if (inventory.length === 0) return
+
+    setLeads((prev) => {
+      const next = prev.filter((lead) => !DEMO_LEAD_TITLES.has(lead.title))
+      return next.length === prev.length ? prev : next
+    })
+
+    setSales((prev) => {
+      const next = prev.filter((sale) => !DEMO_SALE_ITEM_NAMES.has(sale.itemName))
+      return next.length === prev.length ? prev : next
+    })
+  }, [inventory.length])
 
   useEffect(() => {
     const onPopState = () => setRoute(getRouteFromPath(window.location.pathname))
@@ -521,6 +577,48 @@ function App() {
     setSourcingSettings(nextSettings)
   }
 
+  function applyOperatingRegion(nextSettings: AppSettings) {
+    const region = REGION_PRESETS[nextSettings.operatingRegion] ?? REGION_PRESETS['long-island-ny']
+
+    setSettings(
+      enforcePremiumTheme({
+        ...nextSettings,
+        defaultLocation: region.defaultLocation,
+        defaultPickupArea: region.defaultPickupArea,
+        defaultListingLocation: region.defaultListingLocation,
+      }),
+    )
+
+    setSourcingSettings((prev) => ({
+      ...prev,
+      base_zip_code: region.sourcing.base_zip_code,
+      primary_counties: [...region.sourcing.primary_counties],
+      secondary_counties: [...region.sourcing.secondary_counties],
+    }))
+
+    setSourcingSources((prev) =>
+      prev.map((source) => {
+        if (source.source_type === 'craigslist') {
+          return {
+            ...source,
+            base_url: region.craigslistBaseUrl,
+            updated_at: new Date().toISOString(),
+          }
+        }
+
+        if (source.source_type === 'estate_sale') {
+          return {
+            ...source,
+            base_url: region.estateBaseUrl,
+            updated_at: new Date().toISOString(),
+          }
+        }
+
+        return source
+      }),
+    )
+  }
+
   async function fetchDealsNow(): Promise<GolfLeadRadar[]> {
     if (fetchingDeals) return []
     setFetchingDeals(true)
@@ -560,6 +658,29 @@ function App() {
       return []
     } finally {
       setFetchingDeals(false)
+    }
+  }
+
+  async function importFacebookListings(urls: string[], sourceId: string): Promise<GolfLeadRadar[]> {
+    if (urls.length === 0) return []
+
+    try {
+      const response = await fetch(`${apiBase}/api/import-facebook-listings`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ urls, sourceId }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Unable to import Facebook listings')
+      }
+
+      const result = (await response.json()) as Partial<{ imported: GolfLeadRadar[] }>
+      return Array.isArray(result.imported) ? result.imported : []
+    } catch {
+      return []
     }
   }
 
@@ -605,7 +726,7 @@ function App() {
       case 'value-guide':
         return <ValueGuide />
       case 'settings':
-        return <Settings settings={settings} onSave={(next) => setSettings(enforcePremiumTheme(next))} />
+        return <Settings settings={settings} onSave={applyOperatingRegion} />
       case 'terms':
         return (
           <TermsOfService
@@ -632,6 +753,7 @@ function App() {
             locations={sourcingLocations}
             settings={sourcingSettings}
             onFetchDeals={fetchDealsNow}
+            onImportFacebookListings={importFacebookListings}
             onNavigate={(path) => navigateRoute(getRouteFromPath(path))}
             onSaveLead={saveRadarLead}
             onUpdateLead={updateRadarLead}

@@ -151,6 +151,8 @@ export const sourcingRadarSeedSettings: SourcingRadarSettings = {
   secondary_counties: ['North Jersey', 'Fairfield', 'Hudson Valley', 'Rockland', 'Putnam', 'Southern Connecticut'],
   minimum_profit_target: 25,
   minimum_deal_score: 55,
+  auto_fetch_runs_per_day: 2,
+  allow_high_frequency_auto: false,
   source_enablement: {
     craigslist: true,
     facebook_manual: true,

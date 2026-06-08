@@ -48,6 +48,7 @@ function baseLead(lead: Partial<Lead>): Lead {
 
 export const defaultSettings: AppSettings = {
   themePreference: 'premium-navy-amber',
+  operatingRegion: 'long-island-ny',
   legalLastUpdated: '2026-06-07',
   legalContactEmail: 'owner@example.com',
   userName: 'Owner',

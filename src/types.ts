@@ -165,6 +165,7 @@ export interface Source {
 
 export interface AppSettings {
   themePreference: 'premium-navy-amber'
+  operatingRegion: 'long-island-ny' | 'south-florida'
   legalLastUpdated: string
   legalContactEmail: string
   userName: string
@@ -261,6 +262,8 @@ export interface SourcingRadarSettings {
   secondary_counties: string[]
   minimum_profit_target: number
   minimum_deal_score: number
+  auto_fetch_runs_per_day: number
+  allow_high_frequency_auto: boolean
   source_enablement: Record<string, boolean>
   keyword_rules: string[]
   brand_priority: string[]

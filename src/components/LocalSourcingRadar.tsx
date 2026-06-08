@@ -25,6 +25,7 @@ interface LocalSourcingRadarProps {
   locations: SourcingLocation[]
   settings: SourcingRadarSettings
   onFetchDeals: () => Promise<GolfLeadRadar[]>
+  onImportFacebookListings: (urls: string[], sourceId: string) => Promise<GolfLeadRadar[]>
   onNavigate: (path: string) => void
   onSaveLead: (lead: GolfLeadRadar, items?: GolfLeadItem[], followups?: LeadFollowup[]) => void
   onUpdateLead: (lead: GolfLeadRadar) => void
@@ -270,6 +271,7 @@ export function LocalSourcingRadar({
   onToggleSource,
   onAddFollowup,
   onFetchDeals,
+  onImportFacebookListings,
 }: LocalSourcingRadarProps) {
   const [copiedLeadId, setCopiedLeadId] = useState<string | null>(null)
   const [lastSentMessage, setLastSentMessage] = useState<{ leadId: string | null; message: string }>({
@@ -285,6 +287,9 @@ export function LocalSourcingRadar({
   const [mapMode, setMapMode] = useState<'list' | 'map'>('list')
   const [scanResults, setScanResults] = useState<GolfLeadRadar[] | null>(null)
   const [scanning, setScanning] = useState(false)
+  const [facebookSelectedUrls, setFacebookSelectedUrls] = useState('')
+  const [facebookImporting, setFacebookImporting] = useState(false)
+  const [facebookImportMessage, setFacebookImportMessage] = useState('')
   const [facebookForm, setFacebookForm] = useState({
     sourceId: sources[0]?.id ?? '',
     sourceUrl: '',
@@ -525,6 +530,48 @@ export function LocalSourcingRadar({
 
     onSaveLead(nextLead, [], [newFollowup])
     onNavigate(`/sourcing/lead/${nextLead.id}`)
+  }
+
+  async function importSelectedFacebookListings() {
+    const urls = facebookSelectedUrls
+      .split(/\r?\n|,/) 
+      .map((value) => value.trim())
+      .filter((value) => /^https?:\/\//i.test(value))
+
+    if (urls.length === 0) {
+      setFacebookImportMessage('Paste one or more Facebook listing URLs first.')
+      return
+    }
+
+    setFacebookImporting(true)
+    setFacebookImportMessage('Importing selected Facebook listings...')
+
+    try {
+      const imported = await onImportFacebookListings(urls, facebookForm.sourceId)
+      if (imported.length === 0) {
+        setFacebookImportMessage('No new Facebook deals were imported. Check URLs or try different listings.')
+        return
+      }
+
+      for (const lead of imported) {
+        const followup: LeadFollowup = {
+          id: crypto.randomUUID(),
+          lead_id: lead.id,
+          followup_type: 'message_seller',
+          due_date: new Date().toISOString().slice(0, 10),
+          completed: false,
+          notes: 'Imported from selected Facebook URL. Review and send first seller message.',
+          created_at: new Date().toISOString(),
+        }
+        onSaveLead(lead, [], [followup])
+      }
+
+      setFacebookImportMessage(`Imported ${imported.length} real Facebook listing${imported.length > 1 ? 's' : ''}.`)
+      setFacebookSelectedUrls('')
+      onNavigate(`/sourcing/lead/${imported[0].id}`)
+    } finally {
+      setFacebookImporting(false)
+    }
   }
 
   function saveCraigslistSearch() {
@@ -922,6 +969,21 @@ export function LocalSourcingRadar({
       <section className="card form-grid">
         <h3>Manual Facebook Marketplace Import</h3>
           <p className="span-2">Compliant workflow: copy listing details from Facebook Marketplace only. No automated scraping.</p>
+        <label className="span-2">
+          Selected Facebook listing URLs (one per line)
+          <textarea
+            rows={4}
+            value={facebookSelectedUrls}
+            onChange={(event) => setFacebookSelectedUrls(event.target.value)}
+            placeholder="https://www.facebook.com/marketplace/item/..."
+          />
+        </label>
+        <div className="span-2 row-wrap">
+          <button className="btn btn-success" type="button" onClick={() => void importSelectedFacebookListings()} disabled={facebookImporting}>
+            {facebookImporting ? 'Autoloading...' : 'Autoload Selected URLs'}
+          </button>
+          {facebookImportMessage && <span className="muted-copy">{facebookImportMessage}</span>}
+        </div>
         <label className="span-2">
           Facebook listing URL
           <input value={facebookForm.sourceUrl} onChange={(event) => setFacebookForm((prev) => ({ ...prev, sourceUrl: event.target.value }))} />

@@ -7,6 +7,24 @@ import OpenAI from 'openai'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const port = Number(process.env.PORT) || 3001
 const dbFile = path.join(__dirname, 'data', 'db.json')
+const distDir = path.join(__dirname, 'dist')
+const indexHtmlFile = path.join(distDir, 'index.html')
+
+const mimeByExt = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.mjs': 'application/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.txt': 'text/plain; charset=utf-8',
+}
 
 const emptyState = {
   leads: [],
@@ -20,8 +38,25 @@ const emptyState = {
   golf_lead_items: [],
   lead_followups: [],
   sourcing_settings: {},
+  sourcing_runtime: {},
   deals: [],
   deal_analyses: [],
+}
+
+function getDateKey(value = new Date()) {
+  return value.toISOString().slice(0, 10)
+}
+
+function getSourcingRuntime(db) {
+  const runtime = db.sourcing_runtime ?? {}
+  if (!runtime.auto_fetch_runs_by_day || typeof runtime.auto_fetch_runs_by_day !== 'object') {
+    runtime.auto_fetch_runs_by_day = {}
+  }
+  if (!runtime.auto_fetch_imports_by_day || typeof runtime.auto_fetch_imports_by_day !== 'object') {
+    runtime.auto_fetch_imports_by_day = {}
+  }
+  db.sourcing_runtime = runtime
+  return runtime
 }
 
 async function ensureDb() {
@@ -42,6 +77,46 @@ async function readDb() {
 async function writeDb(nextState) {
   await ensureDb()
   await fs.writeFile(dbFile, JSON.stringify(nextState, null, 2), 'utf8')
+}
+
+function isPathInside(parent, child) {
+  const relative = path.relative(parent, child)
+  return relative && !relative.startsWith('..') && !path.isAbsolute(relative)
+}
+
+async function serveFile(res, filePath) {
+  try {
+    const data = await fs.readFile(filePath)
+    const ext = path.extname(filePath).toLowerCase()
+    const contentType = mimeByExt[ext] ?? 'application/octet-stream'
+    res.writeHead(200, {
+      'Content-Type': contentType,
+      'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=3600',
+    })
+    res.end(data)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function serveFrontendRoute(req, res, pathname) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return false
+
+  const normalizedPath = decodeURIComponent(pathname === '/' ? '/index.html' : pathname)
+  const requestedPath = path.join(distDir, normalizedPath)
+
+  if (isPathInside(distDir, requestedPath)) {
+    const served = await serveFile(res, requestedPath)
+    if (served) return true
+  }
+
+  const fallbackServed = await serveFile(res, indexHtmlFile)
+  if (fallbackServed) return true
+
+  res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
+  res.end('Frontend build not found. Run npm run build first.')
+  return true
 }
 
 function sendJson(res, statusCode, payload) {
@@ -109,15 +184,6 @@ function lookupSource(db, sourceType) {
   if (sourceType === 'facebook_manual') {
     return sources.find((source) => source.source_type === 'facebook_manual') ?? sources[0]
   }
-
-  if (sourceType === 'estate_sale') {
-    return sources.find((source) => source.source_type === 'estate_sale') ?? sources[0]
-  }
-
-  if (sourceType === 'garage_sale') {
-    return sources.find((source) => source.source_type === 'garage_sale') ?? sources[0]
-  }
-
   return sources.find((source) => source.source_type === 'craigslist') ?? sources[0]
 }
 
@@ -165,137 +231,545 @@ function estimatePublicDeal(template, sequence) {
   }
 }
 
-async function buildDealTemplates(db) {
-  const baseCount = (db.golf_leads ?? []).length + 1
-  const now = new Date().toISOString()
+function decodeHtmlEntities(value) {
+  return String(value ?? '')
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#x2F;/gi, '/')
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(Number.parseInt(hex, 16)))
+    .replace(/&#([0-9]+);/g, (_, num) => String.fromCharCode(Number.parseInt(num, 10)))
+}
 
-  const templates = [
-    {
+function stripHtml(value) {
+  return decodeHtmlEntities(String(value ?? '').replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim()
+}
+
+function extractTagText(xml, tagName) {
+  const regex = new RegExp(`<${tagName}[^>]*>([\\s\\S]*?)<\\/${tagName}>`, 'i')
+  const match = regex.exec(xml)
+  if (!match) return ''
+  const value = match[1].replace(/^<!\[CDATA\[([\s\S]*?)\]\]>$/i, '$1')
+  return decodeHtmlEntities(value).trim()
+}
+
+function parseRssItems(xmlText) {
+  const itemRegex = /<item>([\s\S]*?)<\/item>/gi
+  const items = []
+  let match = itemRegex.exec(xmlText)
+
+  while (match) {
+    const itemXml = match[1]
+    const title = extractTagText(itemXml, 'title')
+    const link = extractTagText(itemXml, 'link')
+    const descriptionHtml = extractTagText(itemXml, 'description')
+    const pubDate = extractTagText(itemXml, 'dc:date') || extractTagText(itemXml, 'pubDate')
+
+    if (title && link) {
+      items.push({
+        title,
+        link,
+        descriptionHtml,
+        descriptionText: stripHtml(descriptionHtml),
+        pubDate,
+      })
+    }
+
+    match = itemRegex.exec(xmlText)
+  }
+
+  return items
+}
+
+function parseCraigslistPrice(...values) {
+  for (const value of values) {
+    const priceMatch = String(value ?? '').match(/\$(\d{2,5})\b/)
+    if (!priceMatch) continue
+    const parsed = Number(priceMatch[1])
+    if (Number.isFinite(parsed) && parsed > 0) return parsed
+  }
+  return 0
+}
+
+function parseCraigslistArea(title) {
+  const areaMatch = String(title ?? '').match(/\(([^)]+)\)\s*$/)
+  return areaMatch ? areaMatch[1].trim() : ''
+}
+
+function inferClubType(text) {
+  const value = String(text ?? '').toLowerCase()
+  if (/iron\s*set|\birons\b|\b4-pw\b/.test(value)) return 'iron_set'
+  if (/driver/.test(value)) return 'driver'
+  if (/putter/.test(value)) return 'putter'
+  if (/wedge/.test(value)) return 'wedge'
+  if (/hybrid/.test(value)) return 'hybrid'
+  if (/fairway|3 wood|5 wood|7 wood/.test(value)) return 'fairway_wood'
+  if (/bag|stand bag|cart bag/.test(value)) return 'bag'
+  if (/full set|golf set/.test(value)) return 'full_set'
+  return 'unknown'
+}
+
+function inferBrand(text, settings) {
+  const haystack = String(text ?? '').toLowerCase()
+  const rankedBrands = Array.isArray(settings?.brand_priority) ? settings.brand_priority : []
+  const defaults = ['Titleist', 'Callaway', 'TaylorMade', 'Ping', 'Mizuno', 'Cobra', 'Cleveland', 'Odyssey', 'Vokey']
+  const brands = [...rankedBrands, ...defaults]
+
+  for (const brand of brands) {
+    if (!brand) continue
+    if (haystack.includes(String(brand).toLowerCase())) return brand
+  }
+
+  return 'Unknown'
+}
+
+function inferModel(title, brand) {
+  const base = String(title ?? '')
+    .replace(/\s*\([^)]+\)\s*$/g, '')
+    .replace(/^\$?\d+\s*/g, '')
+  if (!base) return 'Unknown'
+
+  const compact = brand && brand !== 'Unknown'
+    ? base.replace(new RegExp(String(brand), 'i'), '').trim()
+    : base.trim()
+
+  return compact || base || 'Unknown'
+}
+
+function inferCounty(locationText) {
+  const value = String(locationText ?? '').toLowerCase()
+  if (/queens/.test(value)) return 'Queens'
+  if (/brooklyn/.test(value)) return 'Kings'
+  if (/bronx/.test(value)) return 'Bronx'
+  if (/manhattan|new york/.test(value)) return 'New York'
+  if (/staten island/.test(value)) return 'Richmond'
+  if (/suffolk/.test(value)) return 'Suffolk'
+  if (/nassau/.test(value) || /long island/.test(value)) return 'Nassau'
+  return 'Nassau'
+}
+
+function inferDistanceAndDriveMinutes(county) {
+  if (county === 'Queens' || county === 'Kings' || county === 'Nassau') return { distance_miles: 18, estimated_drive_minutes: 32 }
+  if (county === 'Suffolk') return { distance_miles: 28, estimated_drive_minutes: 45 }
+  return { distance_miles: 24, estimated_drive_minutes: 40 }
+}
+
+function normalizeCraigslistBaseUrl(baseUrl) {
+  const normalized = normalizeHttpUrl(baseUrl)
+  if (!normalized) return 'https://newyork.craigslist.org/'
+  try {
+    const url = new URL(normalized)
+    return `${url.protocol}//${url.host}/`
+  } catch {
+    return 'https://newyork.craigslist.org/'
+  }
+}
+
+function buildCraigslistRssUrls(source, settings, category = 'sss') {
+  const baseRoot = normalizeCraigslistBaseUrl(source?.base_url)
+  const keywords = Array.isArray(settings?.keyword_rules) && settings.keyword_rules.length
+    ? settings.keyword_rules.slice(0, 4)
+    : ['golf clubs', 'golf iron set', 'golf driver']
+
+  return keywords.map((keyword) => {
+    const search = new URL(`search/${category}`, baseRoot)
+    search.searchParams.set('query', keyword)
+    search.searchParams.set('sort', 'date')
+    search.searchParams.set('format', 'rss')
+    return search.toString()
+  })
+}
+
+function buildEstateSaleSearchUrls(source, settings) {
+  const root = normalizeHttpUrl(source?.base_url) || 'https://www.estatesales.net/'
+  const normalizedRoot = root.endsWith('/') ? root : `${root}/`
+  const keywords = Array.isArray(settings?.keyword_rules) && settings.keyword_rules.length
+    ? settings.keyword_rules.slice(0, 3)
+    : ['golf clubs', 'golf set']
+
+  const urls = []
+  for (const keyword of keywords) {
+    const encoded = encodeURIComponent(keyword)
+    urls.push(`${normalizedRoot}search?q=${encoded}`)
+    urls.push(`${normalizedRoot}search?query=${encoded}`)
+    urls.push(`${normalizedRoot}search?keyword=${encoded}`)
+  }
+
+  return Array.from(new Set(urls))
+}
+
+async function fetchCraigslistRssItems(urls) {
+  const responses = await Promise.all(
+    urls.map(async (rssUrl) => {
+      try {
+        const response = await fetch(rssUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (compatible; GolfFlipTracker/1.0)',
+            Accept: 'application/rss+xml,application/xml,text/xml;q=0.9,*/*;q=0.1',
+          },
+          signal: AbortSignal.timeout(7000),
+        })
+
+        if (!response.ok) return []
+        const xmlText = await response.text()
+        return parseRssItems(xmlText)
+      } catch {
+        return []
+      }
+    }),
+  )
+
+  return responses.flat()
+}
+
+function parseEstateSaleItems(htmlText, pageUrl) {
+  const anchors = []
+  const anchorRegex = /<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi
+  let match = anchorRegex.exec(htmlText)
+
+  while (match) {
+    const href = toAbsoluteUrl(pageUrl, match[1])
+    const text = stripHtml(match[2])
+    if (!href || !text) {
+      match = anchorRegex.exec(htmlText)
+      continue
+    }
+
+    if (!/estatesales\.net/i.test(href)) {
+      match = anchorRegex.exec(htmlText)
+      continue
+    }
+
+    if (!/golf|club|driver|putter|wedge|iron|bag/i.test(text)) {
+      match = anchorRegex.exec(htmlText)
+      continue
+    }
+
+    anchors.push({ href, title: text })
+    match = anchorRegex.exec(htmlText)
+  }
+
+  const deduped = []
+  const seen = new Set()
+  for (const item of anchors) {
+    if (seen.has(item.href)) continue
+    seen.add(item.href)
+    deduped.push(item)
+  }
+
+  return deduped.slice(0, 20)
+}
+
+async function fetchEstateSaleItems(urls) {
+  const responses = await Promise.all(
+    urls.map(async (pageUrl) => {
+      try {
+        const response = await fetch(pageUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (compatible; GolfFlipTracker/1.0)',
+            Accept: 'text/html,application/xhtml+xml',
+          },
+          signal: AbortSignal.timeout(7000),
+        })
+
+        if (!response.ok) return []
+        const htmlText = await response.text()
+        return parseEstateSaleItems(htmlText, pageUrl)
+      } catch {
+        return []
+      }
+    }),
+  )
+
+  return responses.flat()
+}
+
+async function buildDealTemplates(db) {
+  const enabledSources = (db.sourcing_sources ?? []).filter((source) => source.enabled)
+  const craigslistSources = enabledSources.filter((source) => source.source_type === 'craigslist')
+  const garageSources = enabledSources.filter((source) => source.source_type === 'garage_sale')
+  const estateSources = enabledSources.filter((source) => source.source_type === 'estate_sale')
+
+  if (craigslistSources.length === 0 && garageSources.length === 0 && estateSources.length === 0) {
+    return []
+  }
+
+  const settings = db.sourcing_settings ?? {}
+  const now = new Date().toISOString()
+  const rawDeals = []
+
+  for (const source of craigslistSources) {
+    const rssUrls = buildCraigslistRssUrls(source, settings, 'sss')
+    const items = await fetchCraigslistRssItems(rssUrls)
+
+    for (const item of items) {
+      const price = parseCraigslistPrice(item.title, item.descriptionText)
+      if (!price || price > 5000) continue
+
+      const locationText = parseCraigslistArea(item.title) || 'Local pickup area'
+      const county = inferCounty(locationText)
+      const { distance_miles, estimated_drive_minutes } = inferDistanceAndDriveMinutes(county)
+      const mergedText = `${item.title} ${item.descriptionText}`
+      const brand = inferBrand(mergedText, settings)
+      const model = inferModel(item.title, brand)
+      const clubType = inferClubType(mergedText)
+      const listingUrl = normalizeHttpUrl(item.link)
+      if (!listingUrl) continue
+
+      const imageCandidates = dedupeUrls(extractImgSrcUrls(item.descriptionHtml)).filter(looksLikeAdImage)
+
+      rawDeals.push({
+        id: crypto.randomUUID(),
+        source_id: source.id ?? lookupSource(db, 'craigslist')?.id ?? '',
+        source_type: 'craigslist',
+        source_name: source.source_name ?? 'Craigslist - NYC Golf',
+        source_url: listingUrl,
+        title: item.title.replace(/\s*\([^)]+\)\s*$/, '').trim(),
+        description: item.descriptionText || 'Real listing captured from Craigslist RSS feed.',
+        asking_price: price,
+        location_text: locationText,
+        city: locationText,
+        county,
+        state: 'NY',
+        distance_miles,
+        estimated_drive_minutes,
+        pickup_available: true,
+        local_delivery_available: false,
+        shipping_required: false,
+        brand_detected: brand,
+        model_detected: model,
+        club_type_detected: clubType,
+        status: 'new',
+        seller_name_optional: '',
+        seller_contact_optional: '',
+        buyer_contact_optional: '',
+        image_urls: imageCandidates,
+        notes: 'Imported from live Craigslist RSS listing.',
+        created_at: item.pubDate || now,
+        updated_at: now,
+        last_checked_at: now,
+      })
+    }
+  }
+
+  for (const source of garageSources) {
+    const rssUrls = buildCraigslistRssUrls(source, settings, 'gms')
+    const items = await fetchCraigslistRssItems(rssUrls)
+
+    for (const item of items) {
+      const price = parseCraigslistPrice(item.title, item.descriptionText)
+      if (!price || price > 5000) continue
+
+      const locationText = parseCraigslistArea(item.title) || 'Local pickup area'
+      const county = inferCounty(locationText)
+      const { distance_miles, estimated_drive_minutes } = inferDistanceAndDriveMinutes(county)
+      const mergedText = `${item.title} ${item.descriptionText}`
+      const brand = inferBrand(mergedText, settings)
+      const model = inferModel(item.title, brand)
+      const clubType = inferClubType(mergedText)
+      const listingUrl = normalizeHttpUrl(item.link)
+      if (!listingUrl) continue
+
+      const imageCandidates = dedupeUrls(extractImgSrcUrls(item.descriptionHtml)).filter(looksLikeAdImage)
+
+      rawDeals.push({
+        id: crypto.randomUUID(),
+        source_id: source.id ?? '',
+        source_type: 'garage_sale',
+        source_name: source.source_name ?? 'Garage Sale Scout',
+        source_url: listingUrl,
+        title: item.title.replace(/\s*\([^)]+\)\s*$/, '').trim(),
+        description: item.descriptionText || 'Real listing captured from Craigslist garage-sale RSS feed.',
+        asking_price: price,
+        location_text: locationText,
+        city: locationText,
+        county,
+        state: 'NY',
+        distance_miles,
+        estimated_drive_minutes,
+        pickup_available: true,
+        local_delivery_available: false,
+        shipping_required: false,
+        brand_detected: brand,
+        model_detected: model,
+        club_type_detected: clubType,
+        status: 'new',
+        seller_name_optional: '',
+        seller_contact_optional: '',
+        buyer_contact_optional: '',
+        image_urls: imageCandidates,
+        notes: 'Imported from live garage-sale feed.',
+        created_at: item.pubDate || now,
+        updated_at: now,
+        last_checked_at: now,
+      })
+    }
+  }
+
+  for (const source of estateSources) {
+    const pageUrls = buildEstateSaleSearchUrls(source, settings)
+    const items = await fetchEstateSaleItems(pageUrls)
+
+    for (const item of items) {
+      const price = parseCraigslistPrice(item.title)
+      const locationText = 'Estate sale listing'
+      const county = 'Nassau'
+      const { distance_miles, estimated_drive_minutes } = inferDistanceAndDriveMinutes(county)
+      const mergedText = item.title
+      const brand = inferBrand(mergedText, settings)
+      const model = inferModel(item.title, brand)
+      const clubType = inferClubType(mergedText)
+      const listingUrl = normalizeHttpUrl(item.href)
+      if (!listingUrl) continue
+
+      rawDeals.push({
+        id: crypto.randomUUID(),
+        source_id: source.id ?? '',
+        source_type: 'estate_sale',
+        source_name: source.source_name ?? 'Estate Sale Roundup',
+        source_url: listingUrl,
+        title: item.title,
+        description: 'Imported from live estate sale public listing.',
+        asking_price: price,
+        location_text: locationText,
+        city: locationText,
+        county,
+        state: 'NY',
+        distance_miles,
+        estimated_drive_minutes,
+        pickup_available: true,
+        local_delivery_available: false,
+        shipping_required: false,
+        brand_detected: brand,
+        model_detected: model,
+        club_type_detected: clubType,
+        status: 'new',
+        seller_name_optional: '',
+        seller_contact_optional: '',
+        buyer_contact_optional: '',
+        image_urls: [],
+        notes: 'Imported from live estate sale feed.',
+        created_at: now,
+        updated_at: now,
+        last_checked_at: now,
+      })
+    }
+  }
+
+  const dedupedByUrl = []
+  const seenUrls = new Set()
+  for (const lead of rawDeals) {
+    if (seenUrls.has(lead.source_url)) continue
+    seenUrls.add(lead.source_url)
+    dedupedByUrl.push(lead)
+  }
+
+  const valued = dedupedByUrl
+    .map((template) => ({
+      ...template,
+      ...estimatePublicDeal(template),
+    }))
+    .slice(0, 12)
+
+  return Promise.all(valued.map((lead) => hydrateLeadImageUrls(lead)))
+}
+
+async function buildFacebookImportedLeads(db, urls, sourceId) {
+  const source =
+    (db.sourcing_sources ?? []).find(
+      (item) => item.id === sourceId && item.source_type === 'facebook_manual',
+    ) ??
+    lookupSource(db, 'facebook_manual')
+
+  const settings = db.sourcing_settings ?? {}
+  const now = new Date().toISOString()
+  const normalizedUrls = dedupeUrls(Array.isArray(urls) ? urls : []).filter((urlText) =>
+    /facebook\.com\/(marketplace|share)/i.test(urlText),
+  )
+
+  const leads = []
+
+  for (const listingUrl of normalizedUrls.slice(0, 20)) {
+    let title = 'Facebook Marketplace listing'
+    let description = 'Imported from manually selected Facebook listing URL.'
+    let imageUrls = []
+
+    try {
+      const response = await fetch(listingUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; GolfFlipTracker/1.0)',
+          Accept: 'text/html,application/xhtml+xml',
+        },
+        signal: AbortSignal.timeout(7000),
+      })
+
+      if (response.ok) {
+        const html = await response.text()
+        const ogTitle = extractMetaContent(html, 'og:title')
+        const ogDescription = extractMetaContent(html, 'og:description')
+        title = stripHtml(ogTitle || title)
+        description = stripHtml(ogDescription || description)
+        imageUrls = dedupeUrls([
+          ...extractMetaImageUrls(html),
+          ...extractImgSrcUrls(html).slice(0, 12),
+        ]).filter(looksLikeAdImage)
+      }
+    } catch {
+      // Keep minimal listing data when fetch cannot read page metadata.
+    }
+
+    const askingPrice = parseCraigslistPrice(title, description)
+    const locationText = parseCraigslistArea(title) || 'Local pickup area'
+    const county = inferCounty(locationText)
+    const { distance_miles, estimated_drive_minutes } = inferDistanceAndDriveMinutes(county)
+    const mergedText = `${title} ${description}`
+    const brand = inferBrand(mergedText, settings)
+    const model = inferModel(title, brand)
+    const clubType = inferClubType(mergedText)
+
+    const template = {
+      id: crypto.randomUUID(),
+      source_id: source?.id ?? '',
       source_type: 'facebook_manual',
-      source_name: lookupSource(db, 'facebook_manual')?.source_name ?? 'Facebook Marketplace - LI Golf Alerts',
-      source_url: 'https://www.facebook.com/marketplace/item/titleist-t200-iron-set-li',
-      title: 'Facebook: Titleist T200 Iron Set',
-      description: 'Auto-added from Facebook search. Verify listing photos and condition before messaging seller.',
-      asking_price: 260,
-      location_text: 'Massapequa, NY',
-      city: 'Massapequa',
-      county: 'Nassau',
+      source_name: source?.source_name ?? 'Facebook Marketplace - Manual',
+      source_url: listingUrl,
+      title,
+      description,
+      asking_price: askingPrice,
+      location_text: locationText,
+      city: locationText,
+      county,
       state: 'NY',
-      distance_miles: 16,
-      estimated_drive_minutes: 24,
+      distance_miles,
+      estimated_drive_minutes,
       pickup_available: true,
       local_delivery_available: true,
       shipping_required: false,
-      brand_detected: 'Titleist',
-      model_detected: 'T200',
-      club_type_detected: 'iron_set',
+      brand_detected: brand,
+      model_detected: model,
+      club_type_detected: clubType,
       status: 'new',
-      seller_name_optional: 'Facebook Seller',
+      seller_name_optional: '',
       seller_contact_optional: '',
       buyer_contact_optional: '',
-      image_urls: [],
-      notes: 'Auto-added Facebook lead from search now.',
+      image_urls: imageUrls,
+      notes: 'Imported from selected Facebook listing URL.',
       created_at: now,
       updated_at: now,
       last_checked_at: now,
-    },
-    {
-      source_type: 'craigslist',
-      source_name: lookupSource(db, 'craigslist')?.source_name ?? 'Craigslist - NYC Golf',
-      source_url: 'https://newyork.craigslist.org/',
-      title: 'Ping G430 Max Driver',
-      description: 'Public listing surfaced from a local search scan. Pickup in Nassau County.',
-      asking_price: 120,
-      location_text: 'Hempstead, NY',
-      city: 'Hempstead',
-      county: 'Nassau',
-      state: 'NY',
-      distance_miles: 12,
-      estimated_drive_minutes: 22,
-      pickup_available: true,
-      local_delivery_available: false,
-      shipping_required: false,
-      brand_detected: 'Ping',
-      model_detected: 'G430 Max',
-      club_type_detected: 'driver',
-      status: 'new',
-      seller_name_optional: '',
-      seller_contact_optional: '',
-      image_urls: [],
-      notes: 'Public-source lead captured on demand.',
-      created_at: now,
-      updated_at: now,
-      last_checked_at: now,
-    },
-    {
-      source_type: 'other',
-      source_name: 'Long Island Golf Auction',
-      source_url: 'https://example.com/auction',
-      title: 'Auction: Mizuno JPX 923 Iron Set',
-      description: 'Public auction lot with irons, bag, and wedges. Local pickup after auction close.',
-      asking_price: 200,
-      location_text: 'Melville, NY',
-      city: 'Melville',
-      county: 'Suffolk',
-      state: 'NY',
-      distance_miles: 19,
-      estimated_drive_minutes: 30,
-      pickup_available: true,
-      local_delivery_available: false,
-      shipping_required: false,
-      brand_detected: 'Mizuno',
-      model_detected: 'JPX 923',
-      club_type_detected: 'iron_set',
-      status: 'researching',
-      seller_name_optional: 'Auction House',
-      seller_contact_optional: '',
-      image_urls: [],
-      notes: 'Auction lot needs quick bid ceiling and pickup plan.',
-      created_at: now,
-      updated_at: now,
-      last_checked_at: now,
-    },
-    {
-      source_type: 'estate_sale',
-      source_name: lookupSource(db, 'estate_sale')?.source_name ?? 'Estate Sale Roundup',
-      source_url: 'https://www.estatesales.net/',
-      title: 'Callaway Apex Iron Set',
-      description: 'Local estate sale with iron set and bag. Buyer to inspect in person.',
-      asking_price: 180,
-      location_text: 'Westbury, NY',
-      city: 'Westbury',
-      county: 'Nassau',
-      state: 'NY',
-      distance_miles: 14,
-      estimated_drive_minutes: 26,
-      pickup_available: true,
-      local_delivery_available: false,
-      shipping_required: false,
-      brand_detected: 'Callaway',
-      model_detected: 'Apex',
-      club_type_detected: 'iron_set',
-      status: 'researching',
-      seller_name_optional: '',
-      seller_contact_optional: '',
-      image_urls: [],
-      notes: 'Likely bundle opportunity if shafts are clean.',
-      created_at: now,
-      updated_at: now,
-      last_checked_at: now,
-    },
-  ]
-    .filter((template) => !template.shipping_required)
-    .map((template) => {
-    const valuation = estimatePublicDeal(template, baseCount)
-    return {
-      id: crypto.randomUUID(),
-      source_id: lookupSource(db, template.source_type)?.id ?? '',
-      ...template,
-      ...valuation,
     }
-    })
 
-  return Promise.all(templates.map((lead) => hydrateLeadImageUrls(lead)))
+    const lead = {
+      ...template,
+      ...estimatePublicDeal(template),
+    }
+
+    leads.push(await hydrateLeadImageUrls(lead))
+  }
+
+  return leads
 }
 
 function normalizeLeadKey(lead) {
@@ -359,6 +833,16 @@ function extractMetaImageUrls(html) {
     match = metaRegex.exec(html)
   }
   return matches
+}
+
+function extractMetaContent(html, metaKey) {
+  const escaped = String(metaKey).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const regex = new RegExp(
+    `<meta[^>]+(?:property|name|itemprop)=["']${escaped}["'][^>]*content=["']([^"']+)["'][^>]*>`,
+    'i',
+  )
+  const match = regex.exec(String(html ?? ''))
+  return match ? decodeHtmlEntities(match[1]).trim() : ''
 }
 
 function extractImgSrcUrls(html) {
@@ -742,6 +1226,29 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === '/api/fetch-deals-now' && req.method === 'POST') {
     const db = await readDb()
+    const body = (await parseBody(req)) ?? {}
+    const mode = body?.mode === 'auto' ? 'auto' : 'manual'
+    const settings = db.sourcing_settings ?? {}
+    const dailyAutoLimit = Number(settings.auto_fetch_runs_per_day ?? 2)
+    const allowHighFrequencyAuto = Boolean(settings.allow_high_frequency_auto)
+    const todayKey = getDateKey()
+    const runtime = getSourcingRuntime(db)
+    const currentAutoRuns = Number(runtime.auto_fetch_runs_by_day[todayKey] ?? 0)
+
+    if (mode === 'auto' && !allowHighFrequencyAuto && currentAutoRuns >= dailyAutoLimit) {
+      sendJson(res, 429, {
+        ok: false,
+        error: `Daily auto-fetch limit reached (${dailyAutoLimit}). Manual scans remain available.`,
+        policy: {
+          mode,
+          dailyAutoLimit,
+          currentAutoRuns,
+          allowHighFrequencyAuto,
+        },
+      })
+      return
+    }
+
     const imported = await buildDealTemplates(db)
     const existingKeys = new Set((db.golf_leads ?? []).map((lead) => normalizeLeadKey(lead)))
     const existingLeadByKey = new Map((db.golf_leads ?? []).map((lead) => [normalizeLeadKey(lead), lead]))
@@ -793,8 +1300,87 @@ const server = http.createServer(async (req, res) => {
     db.golf_lead_items = [...importedItems, ...(db.golf_lead_items ?? [])]
     db.lead_followups = [...importedFollowups, ...(db.lead_followups ?? [])]
 
+    if (mode === 'auto') {
+      runtime.auto_fetch_runs_by_day[todayKey] = currentAutoRuns + 1
+      runtime.auto_fetch_imports_by_day[todayKey] =
+        Number(runtime.auto_fetch_imports_by_day[todayKey] ?? 0) + uniqueImported.length
+      runtime.last_auto_fetch_at = new Date().toISOString()
+    } else {
+      runtime.last_manual_fetch_at = new Date().toISOString()
+    }
+
     await writeDb(db)
-    sendJson(res, 200, { ok: true, imported: uniqueImported, items: importedItems, followups: importedFollowups })
+    sendJson(res, 200, {
+      ok: true,
+      mode,
+      imported: uniqueImported,
+      items: importedItems,
+      followups: importedFollowups,
+      policy: {
+        dailyAutoLimit,
+        currentAutoRuns: mode === 'auto' ? currentAutoRuns + 1 : currentAutoRuns,
+        allowHighFrequencyAuto,
+      },
+    })
+    return
+  }
+
+  if (url.pathname === '/api/import-facebook-listings' && req.method === 'POST') {
+    const db = await readDb()
+    const body = await parseBody(req)
+    const urls = Array.isArray(body?.urls) ? body.urls : []
+    const sourceId = typeof body?.sourceId === 'string' ? body.sourceId : ''
+
+    if (urls.length === 0) {
+      sendJson(res, 400, { error: 'No listing URLs provided' })
+      return
+    }
+
+    const imported = await buildFacebookImportedLeads(db, urls, sourceId)
+    const existingKeys = new Set((db.golf_leads ?? []).map((lead) => normalizeLeadKey(lead)))
+    const uniqueImported = imported.filter((lead) => {
+      const key = normalizeLeadKey(lead)
+      if (existingKeys.has(key)) return false
+      existingKeys.add(key)
+      return true
+    })
+
+    const importedItems = uniqueImported.map((lead) => ({
+      id: crypto.randomUUID(),
+      lead_id: lead.id,
+      item_type: lead.club_type_detected === 'iron_set' ? 'iron_set' : lead.club_type_detected,
+      brand: lead.brand_detected,
+      model: lead.model_detected,
+      shaft: 'Unknown',
+      flex: 'Unknown',
+      condition_grade: 'Good',
+      estimated_individual_resale_low: lead.estimated_resale_low,
+      estimated_individual_resale_high: lead.estimated_resale_high,
+      notes: 'Imported from selected Facebook listing URL.',
+    }))
+
+    const importedFollowups = uniqueImported.map((lead) => ({
+      id: crypto.randomUUID(),
+      lead_id: lead.id,
+      followup_type: 'message_seller',
+      due_date: new Date().toISOString().slice(0, 10),
+      completed: false,
+      notes: 'Review imported Facebook listing and send first message.',
+      created_at: new Date().toISOString(),
+    }))
+
+    db.golf_leads = [...uniqueImported, ...(db.golf_leads ?? [])]
+    db.golf_lead_items = [...importedItems, ...(db.golf_lead_items ?? [])]
+    db.lead_followups = [...importedFollowups, ...(db.lead_followups ?? [])]
+
+    await writeDb(db)
+    sendJson(res, 200, {
+      ok: true,
+      imported: uniqueImported,
+      items: importedItems,
+      followups: importedFollowups,
+      skipped: Math.max(0, urls.length - uniqueImported.length),
+    })
     return
   }
 
@@ -875,9 +1461,12 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  const servedFrontend = await serveFrontendRoute(req, res, url.pathname)
+  if (servedFrontend) return
+
   sendJson(res, 404, { error: 'Route not found' })
 })
 
-server.listen(port, '127.0.0.1', () => {
-  console.log(`Golf Flip Tracker API listening on http://127.0.0.1:${port}`)
+server.listen(port, '0.0.0.0', () => {
+  console.log(`Golf Flip Tracker fullstack server listening on http://0.0.0.0:${port}`)
 })
