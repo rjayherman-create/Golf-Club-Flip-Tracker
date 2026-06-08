@@ -187,6 +187,21 @@ function parsePhotoUrls(raw: string) {
     .filter((value) => /^https?:\/\//i.test(value))
 }
 
+function parsePastedUrls(raw: string) {
+  const direct = String(raw ?? '')
+    .split(/\r?\n|,/) 
+    .map((value) => value.trim())
+    .filter(Boolean)
+
+  const discovered = Array.from(String(raw ?? '').matchAll(/https?:\/\/[^\s)\]]+/gi)).map((match) => match[0])
+
+  const normalized = [...direct, ...discovered]
+    .map((value) => value.replace(/[)>.,;]+$/g, '').trim())
+    .filter((value) => /^https?:\/\//i.test(value))
+
+  return Array.from(new Set(normalized))
+}
+
 function DealPhotoCarousel({ lead }: { lead: GolfLeadRadar }) {
   const photos = getLeadPhotos(lead)
   const [photoIndex, setPhotoIndex] = useState(0)
@@ -315,6 +330,7 @@ export function LocalSourcingRadar({
   const [facebookSelectedUrls, setFacebookSelectedUrls] = useState('')
   const [facebookImporting, setFacebookImporting] = useState(false)
   const [facebookImportMessage, setFacebookImportMessage] = useState('')
+  const [showAdvancedManual, setShowAdvancedManual] = useState(false)
   const [lastImportedLeads, setLastImportedLeads] = useState<GolfLeadRadar[]>([])
   const [lastImportSummary, setLastImportSummary] = useState<{
     requested: number
@@ -589,13 +605,10 @@ export function LocalSourcingRadar({
   }
 
   async function importSelectedFacebookListings() {
-    const urls = facebookSelectedUrls
-      .split(/\r?\n|,/) 
-      .map((value) => value.trim())
-      .filter((value) => /^https?:\/\//i.test(value))
+    const urls = parsePastedUrls(facebookSelectedUrls)
 
     if (urls.length === 0) {
-      setFacebookImportMessage('Paste one or more Facebook listing URLs first.')
+      setFacebookImportMessage('Paste one or more Facebook listing URLs first. You can paste raw links or markdown links.')
       return
     }
 
@@ -1059,11 +1072,20 @@ export function LocalSourcingRadar({
 
     return (
       <section className="card form-grid">
-        <h3>Manual Facebook Marketplace Import</h3>
-          <p className="span-2">Compliant workflow: copy listing details from Facebook Marketplace only. No automated scraping.</p>
-          <p className="span-2 muted-copy">Autoload now accepts only verified real listing data. Placeholder/unverified pages are skipped automatically.</p>
+        <h3>Facebook URL Autoload (Recommended)</h3>
+        <p className="span-2">Compliant workflow: copy listing details from Facebook Marketplace only. No automated scraping.</p>
+        <p className="span-2 muted-copy">Only this is required: paste URL and click Autoload Selected URLs. Everything below is optional manual entry.</p>
+        <section className="card span-2">
+          <h4>Quick steps</h4>
+          <ol className="plain-list">
+            <li>Open the Facebook listing and copy its URL.</li>
+            <li>Paste URL(s) below, one per line.</li>
+            <li>Click Autoload Selected URLs.</li>
+            <li>Open lead from Autoload Results.</li>
+          </ol>
+        </section>
         <label className="span-2">
-          Selected Facebook listing URLs (one per line)
+          Paste Facebook listing URL(s) here (required)
           <textarea
             rows={4}
             value={facebookSelectedUrls}
@@ -1071,6 +1093,9 @@ export function LocalSourcingRadar({
             placeholder="https://www.facebook.com/marketplace/item/..."
           />
         </label>
+        <p className="span-2 muted-copy">
+          URLs detected: {parsePastedUrls(facebookSelectedUrls).length}. You can paste plain links, comma-separated links, or markdown links.
+        </p>
         <div className="span-2 row-wrap">
           <button className="btn btn-success" type="button" onClick={() => void importSelectedFacebookListings()} disabled={facebookImporting}>
             {facebookImporting ? 'Autoloading...' : 'Autoload Selected URLs'}
@@ -1080,81 +1105,91 @@ export function LocalSourcingRadar({
           </a>
           {facebookImportMessage && <span className="muted-copy">{facebookImportMessage}</span>}
         </div>
-        <label className="span-2">
-          Facebook listing URL
-          <input value={facebookForm.sourceUrl} onChange={(event) => setFacebookForm((prev) => ({ ...prev, sourceUrl: event.target.value }))} />
-        </label>
-        <label className="span-2">
-          Seller message URL (optional)
-          <input
-            value={facebookForm.messageUrl}
-            onChange={(event) => setFacebookForm((prev) => ({ ...prev, messageUrl: event.target.value }))}
-            placeholder="https://www.facebook.com/messages/..."
-          />
-        </label>
-        <label className="span-2">
-          Listing title
-          <input value={facebookForm.title} onChange={(event) => setFacebookForm((prev) => ({ ...prev, title: event.target.value }))} />
-        </label>
-        <label>
-          Asking price
-          <input type="number" value={facebookForm.askingPrice} onChange={(event) => setFacebookForm((prev) => ({ ...prev, askingPrice: event.target.value }))} />
-        </label>
-        <label>
-          Location
-          <input value={facebookForm.locationText} onChange={(event) => setFacebookForm((prev) => ({ ...prev, locationText: event.target.value }))} />
-        </label>
-        <label className="span-2">
-          Description
-          <textarea rows={5} value={facebookForm.description} onChange={(event) => setFacebookForm((prev) => ({ ...prev, description: event.target.value }))} />
-        </label>
-        <label className="span-2">
-          Photo URLs (one per line)
-          <textarea
-            rows={3}
-            value={facebookForm.photoUrls}
-            onChange={(event) => setFacebookForm((prev) => ({ ...prev, photoUrls: event.target.value }))}
-            placeholder="https://...image1.jpg\nhttps://...image2.jpg"
-          />
-        </label>
-        <label className="span-2">
-          Screenshot / photo upload
-          <input
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={(event) => setFacebookForm((prev) => ({ ...prev, uploadedPhotos: event.target.files?.length ?? 0 }))}
-          />
-        </label>
-        <label>
-          Pickup or local delivery
-          <select value={facebookForm.pickupChoice} onChange={(event) => setFacebookForm((prev) => ({ ...prev, pickupChoice: event.target.value as 'pickup' | 'delivery' | 'shipping' }))}>
-            <option value="pickup">Pickup</option>
-            <option value="delivery">Local delivery</option>
-          </select>
-        </label>
-        <label>
-          Notes
-          <input value={facebookForm.notes} onChange={(event) => setFacebookForm((prev) => ({ ...prev, notes: event.target.value }))} />
-        </label>
         <div className="span-2 row-wrap">
-          <button className="btn btn-primary" type="button" onClick={saveManualFacebookLead}>
-            Analyze Deal
+          <button className="btn" type="button" onClick={() => setShowAdvancedManual((prev) => !prev)}>
+            {showAdvancedManual ? 'Hide optional manual fields' : 'Show optional manual fields'}
           </button>
           <button className="btn" type="button" onClick={() => onNavigate('/sourcing')}>
             Back to Radar
           </button>
         </div>
-        <section className="card span-2">
-          <h4>Deal score preview</h4>
-          <div className="stats-grid compact-grid">
-            <article className="card"><h4>Estimated resale value</h4><strong>{currency(previewScore.estimated_resale_average)}</strong></article>
-            <article className="card"><h4>Max recommended buy</h4><strong>{currency(previewScore.suggested_max_buy_price)}</strong></article>
-            <article className="card"><h4>Expected profit</h4><strong className={previewScore.expected_profit >= 0 ? 'profit' : 'loss'}>{currency(previewScore.expected_profit)}</strong></article>
-            <article className="card"><h4>Pickup distance</h4><strong>Set on lead detail</strong></article>
-          </div>
-          <p className="muted-copy">Risk notes: verify exact model, request close-up photos, and confirm pickup before committing.</p>
-        </section>
+
+        {showAdvancedManual && (
+          <>
+            <label className="span-2">
+              Facebook listing URL
+              <input value={facebookForm.sourceUrl} onChange={(event) => setFacebookForm((prev) => ({ ...prev, sourceUrl: event.target.value }))} />
+            </label>
+            <label className="span-2">
+              Seller message URL (optional)
+              <input
+                value={facebookForm.messageUrl}
+                onChange={(event) => setFacebookForm((prev) => ({ ...prev, messageUrl: event.target.value }))}
+                placeholder="https://www.facebook.com/messages/..."
+              />
+            </label>
+            <label className="span-2">
+              Listing title
+              <input value={facebookForm.title} onChange={(event) => setFacebookForm((prev) => ({ ...prev, title: event.target.value }))} />
+            </label>
+            <label>
+              Asking price
+              <input type="number" value={facebookForm.askingPrice} onChange={(event) => setFacebookForm((prev) => ({ ...prev, askingPrice: event.target.value }))} />
+            </label>
+            <label>
+              Location
+              <input value={facebookForm.locationText} onChange={(event) => setFacebookForm((prev) => ({ ...prev, locationText: event.target.value }))} />
+            </label>
+            <label className="span-2">
+              Description
+              <textarea rows={5} value={facebookForm.description} onChange={(event) => setFacebookForm((prev) => ({ ...prev, description: event.target.value }))} />
+            </label>
+            <label className="span-2">
+              Photo URLs (one per line)
+              <textarea
+                rows={3}
+                value={facebookForm.photoUrls}
+                onChange={(event) => setFacebookForm((prev) => ({ ...prev, photoUrls: event.target.value }))}
+                placeholder="https://...image1.jpg\nhttps://...image2.jpg"
+              />
+            </label>
+            <label className="span-2">
+              Screenshot / photo upload
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={(event) => setFacebookForm((prev) => ({ ...prev, uploadedPhotos: event.target.files?.length ?? 0 }))}
+              />
+            </label>
+            <label>
+              Pickup or local delivery
+              <select value={facebookForm.pickupChoice} onChange={(event) => setFacebookForm((prev) => ({ ...prev, pickupChoice: event.target.value as 'pickup' | 'delivery' | 'shipping' }))}>
+                <option value="pickup">Pickup</option>
+                <option value="delivery">Local delivery</option>
+              </select>
+            </label>
+            <label>
+              Notes
+              <input value={facebookForm.notes} onChange={(event) => setFacebookForm((prev) => ({ ...prev, notes: event.target.value }))} />
+            </label>
+            <div className="span-2 row-wrap">
+              <button className="btn btn-primary" type="button" onClick={saveManualFacebookLead}>
+                Analyze Deal
+              </button>
+            </div>
+            <section className="card span-2">
+              <h4>Deal score preview</h4>
+              <div className="stats-grid compact-grid">
+                <article className="card"><h4>Estimated resale value</h4><strong>{currency(previewScore.estimated_resale_average)}</strong></article>
+                <article className="card"><h4>Max recommended buy</h4><strong>{currency(previewScore.suggested_max_buy_price)}</strong></article>
+                <article className="card"><h4>Expected profit</h4><strong className={previewScore.expected_profit >= 0 ? 'profit' : 'loss'}>{currency(previewScore.expected_profit)}</strong></article>
+                <article className="card"><h4>Pickup distance</h4><strong>Set on lead detail</strong></article>
+              </div>
+              <p className="muted-copy">Risk notes: verify exact model, request close-up photos, and confirm pickup before committing.</p>
+            </section>
+          </>
+        )}
 
         {lastImportSummary && (
           <section className="card span-2">

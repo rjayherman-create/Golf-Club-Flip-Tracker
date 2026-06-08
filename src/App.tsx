@@ -167,6 +167,43 @@ function enforcePremiumTheme(settings: AppSettings): AppSettings {
   }
 }
 
+function isTrustedLeadUrl(urlText: string, sourceName?: string) {
+  const value = String(urlText ?? '').trim().toLowerCase()
+  const source = String(sourceName ?? '').toLowerCase()
+  if (!/^https?:\/\//.test(value)) return false
+  if (/\/item\/(test|alpha-|bad-shipping-listing)/.test(value)) return false
+  if (value.includes('example.com')) return false
+
+  if (source.includes('facebook') || value.includes('facebook.com/marketplace')) {
+    return /facebook\.com\/marketplace\/(item|share)\//.test(value) && !/\/item\/[^/?]*test/.test(value)
+  }
+
+  if (source.includes('craigslist') || value.includes('craigslist.org')) {
+    return /craigslist\.org\/.+\/.+\//.test(value) && !value.endsWith('craigslist.org/')
+  }
+
+  if (source.includes('estate') || value.includes('estatesales.net')) {
+    return /estatesales\.net\/.+/.test(value) && !value.endsWith('estatesales.net/')
+  }
+
+  return true
+}
+
+function removeFakeStrongBuyLeads(leads: GolfLeadRadar[]) {
+  const fakeTitleHints = [/^photo verification/i, /^facebook:/i, /^auction:/i, /^shipping test/i]
+
+  return leads.filter((lead) => {
+    const title = String(lead.title ?? '')
+    const titleLooksFake = fakeTitleHints.some((pattern) => pattern.test(title))
+    const hasTrustedUrl = isTrustedLeadUrl(lead.source_url, lead.source_name)
+    const isStrongBuy = String(lead.deal_label ?? '').toLowerCase() === 'strong buy'
+
+    if (titleLooksFake) return false
+    if (isStrongBuy && !hasTrustedUrl) return false
+    return true
+  })
+}
+
 const REGION_PRESETS = {
   'long-island-ny': {
     defaultLocation: 'Long Island, NY',
@@ -224,7 +261,7 @@ function App() {
     loadLocal('gft.sourcing.locations', sourcingLocationSeeds),
   )
   const [golfLeads, setGolfLeads] = useState<GolfLeadRadar[]>(() =>
-    loadLocal('gft.sourcing.leads', golfLeadRadarSeeds),
+    removeFakeStrongBuyLeads(loadLocal('gft.sourcing.leads', golfLeadRadarSeeds)),
   )
   const [golfLeadItems, setGolfLeadItems] = useState<GolfLeadItem[]>(() =>
     loadLocal('gft.sourcing.leadItems', golfLeadItemSeeds),
@@ -258,6 +295,19 @@ function App() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = 'premium-navy-amber'
+  }, [])
+
+  // Always remove fake/test Strong Buy leads and keep related records in sync.
+  useEffect(() => {
+    setGolfLeads((prev) => {
+      const cleaned = removeFakeStrongBuyLeads(prev)
+      if (cleaned.length === prev.length) return prev
+
+      const allowedLeadIds = new Set(cleaned.map((lead) => lead.id))
+      setGolfLeadItems((items) => items.filter((item) => allowedLeadIds.has(item.lead_id)))
+      setLeadFollowups((followups) => followups.filter((item) => allowedLeadIds.has(item.lead_id)))
+      return cleaned
+    })
   }, [])
 
   // Once a real inventory item exists, strip starter demo records from leads/sales.
@@ -319,9 +369,21 @@ function App() {
         }
         if (remote.sourcing_sources) setSourcingSources(remote.sourcing_sources)
         if (remote.sourcing_locations) setSourcingLocations(remote.sourcing_locations)
-        if (remote.golf_leads) setGolfLeads(remote.golf_leads)
-        if (remote.golf_lead_items) setGolfLeadItems(remote.golf_lead_items)
-        if (remote.lead_followups) setLeadFollowups(remote.lead_followups)
+        if (remote.golf_leads) {
+          const cleanedLeads = removeFakeStrongBuyLeads(remote.golf_leads)
+          const allowedLeadIds = new Set(cleanedLeads.map((lead) => lead.id))
+          setGolfLeads(cleanedLeads)
+
+          if (remote.golf_lead_items) {
+            setGolfLeadItems(remote.golf_lead_items.filter((item) => allowedLeadIds.has(item.lead_id)))
+          }
+          if (remote.lead_followups) {
+            setLeadFollowups(remote.lead_followups.filter((item) => allowedLeadIds.has(item.lead_id)))
+          }
+        } else {
+          if (remote.golf_lead_items) setGolfLeadItems(remote.golf_lead_items)
+          if (remote.lead_followups) setLeadFollowups(remote.lead_followups)
+        }
         if (remote.sourcing_settings) setSourcingSettings(remote.sourcing_settings)
       } catch {
         // Keep localStorage/sample data if the API is unavailable.
