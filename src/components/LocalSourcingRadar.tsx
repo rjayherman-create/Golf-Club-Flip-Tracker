@@ -327,6 +327,7 @@ export function LocalSourcingRadar({
   const [mapMode, setMapMode] = useState<'list' | 'map'>('list')
   const [scanResults, setScanResults] = useState<GolfLeadRadar[] | null>(null)
   const [scanning, setScanning] = useState(false)
+  const [scanMessage, setScanMessage] = useState('')
   const [facebookSelectedUrls, setFacebookSelectedUrls] = useState('')
   const [facebookImporting, setFacebookImporting] = useState(false)
   const [facebookImportMessage, setFacebookImportMessage] = useState('')
@@ -732,13 +733,21 @@ export function LocalSourcingRadar({
 
   async function handleCraigslistScan() {
     setScanning(true)
+    setScanMessage('Searching live public sources...')
     try {
       const imported = await onFetchDeals()
       if (imported.length > 0) {
         setScanResults(imported)
+        setScanMessage(`Search complete: imported ${imported.length} new deal${imported.length > 1 ? 's' : ''} from live public sources.`)
       } else {
         // If no new leads were imported, still show matching leads from current data.
-        setScanResults(saveCraigslistSearch())
+        const matches = saveCraigslistSearch()
+        setScanResults(matches)
+        setScanMessage(
+          matches.length > 0
+            ? 'No new deals were imported. Showing matching public leads already in your radar.'
+            : 'No matching public leads found. Try changing county, keyword, or price range.',
+        )
       }
     } finally {
       setScanning(false)
@@ -1248,6 +1257,7 @@ export function LocalSourcingRadar({
           <h3>Facebook Marketplace + Craigslist Connector</h3>
           <p className="span-2">Search now auto-adds deals only from Facebook Marketplace and Craigslist. Shipping-only deals are excluded automatically.</p>
           <p className="muted-copy span-2">This scan ignores manual source selection and searches all enabled public sources automatically.</p>
+          {scanMessage && <p className="span-2 muted-copy">{scanMessage}</p>}
           <label>
             County / region
             <select value={craigslistForm.county} onChange={(event) => setCraigslistForm((prev) => ({ ...prev, county: event.target.value }))}>
