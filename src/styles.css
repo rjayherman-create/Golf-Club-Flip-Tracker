@@ -402,6 +402,17 @@ p {
   background: rgba(245, 158, 11, 0.05);
 }
 
+.scan-page .upload-box.drag-active {
+  border-color: var(--color-warning);
+  background: rgba(245, 158, 11, 0.12);
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2);
+}
+
+.scan-page .upload-box .drop-hint {
+  color: var(--color-warning);
+  font-weight: 800;
+}
+
 .scan-page .upload-box input {
   display: none;
 }
@@ -414,6 +425,28 @@ p {
 .scan-page .upload-box span,
 .scan-page .helper-note {
   color: var(--color-text-muted);
+}
+
+.scan-page .upload-actions {
+  margin: 0 0 14px;
+}
+
+.scan-page .photo-link-field {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-weight: 700;
+  color: var(--color-text-light);
+}
+
+.scan-page .photo-link-field textarea {
+  min-height: 88px;
+  resize: vertical;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-field-bg);
+  color: var(--color-text-light);
+  padding: 10px 12px;
 }
 
 .scan-page .photo-preview-grid {

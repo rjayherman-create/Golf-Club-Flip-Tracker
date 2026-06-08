@@ -78,6 +78,34 @@ function readFileAsDataUrl(file: File) {
   })
 }
 
+const MAX_SCAN_PHOTOS = 8
+
+function extractUrlsFromText(raw: string) {
+  const matches = raw.match(/https?:\/\/[^\s<>")]+/gi) || []
+
+  return Array.from(
+    new Set(
+      matches
+        .map((entry) => entry.replace(/[),.;!?]+$/, '').trim())
+        .filter(Boolean),
+    ),
+  )
+}
+
+function extractImagesFromClipboard(data: DataTransfer | null) {
+  if (!data) return []
+
+  const files: File[] = []
+  Array.from(data.items || []).forEach((item, index) => {
+    if (!item.type.startsWith('image/')) return
+    const file = item.getAsFile()
+    if (!file) return
+    files.push(new File([file], file.name || `clipboard-photo-${Date.now()}-${index}.png`, { type: file.type }))
+  })
+
+  return files
+}
+
 function calculateRecommendation(
   askingPrice: number,
   estimatedLotLow: number,
@@ -153,9 +181,12 @@ type ClubFlipFeaturePanelProps = {
 export function ClubFlipFeaturePanel({ onConfirmToValue }: ClubFlipFeaturePanelProps) {
   const apiBase = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:3001'
   const [photos, setPhotos] = useState<File[]>([])
+  const [photoUrls, setPhotoUrls] = useState<string[]>([])
+  const [photoLinkInput, setPhotoLinkInput] = useState('')
   const [clubs, setClubs] = useState<ScannedClub[]>([])
   const [askingPrice, setAskingPrice] = useState<number>(40)
   const [isScanning, setIsScanning] = useState(false)
+  const [isDragActive, setIsDragActive] = useState(false)
   const [savedMessage, setSavedMessage] = useState('')
 
   const photoPreviews = useMemo(() => photos.map((file) => URL.createObjectURL(file)), [photos])
@@ -178,11 +209,164 @@ export function ClubFlipFeaturePanel({ onConfirmToValue }: ClubFlipFeaturePanelP
     ? calculateRecommendation(askingPrice, estimatedLotLow, estimatedLotHigh)
     : 'PASS'
 
-  function handlePhotoUpload(event: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.target.files || [])
-    setPhotos(files)
+  function resetScanState() {
     setClubs([])
     setSavedMessage('')
+  }
+
+  function appendPhotos(incoming: File[]) {
+    if (!incoming.length) return
+
+    setPhotos((current) => {
+      const room = Math.max(0, MAX_SCAN_PHOTOS - (current.length + photoUrls.length))
+      const next = [...current, ...incoming.slice(0, room)]
+      if (!room) {
+        setSavedMessage(`Photo limit reached. Keep up to ${MAX_SCAN_PHOTOS} photos total.`)
+      } else if (incoming.length > room) {
+        setSavedMessage(`Added ${room} photos. Maximum is ${MAX_SCAN_PHOTOS} total photos.`)
+      }
+      return next
+    })
+
+    resetScanState()
+  }
+
+  function appendPhotoUrls(rawText: string) {
+    const links = extractUrlsFromText(rawText)
+    if (!links.length) return 0
+
+    let addedCount = 0
+    setPhotoUrls((current) => {
+      const deduped = links.filter((url) => !current.includes(url))
+      const room = Math.max(0, MAX_SCAN_PHOTOS - (photos.length + current.length))
+      const toAdd = deduped.slice(0, room)
+      addedCount = toAdd.length
+
+      if (!room) {
+        setSavedMessage(`Photo limit reached. Keep up to ${MAX_SCAN_PHOTOS} photos total.`)
+      } else if (deduped.length > room) {
+        setSavedMessage(`Added ${room} photo links. Maximum is ${MAX_SCAN_PHOTOS} total photos.`)
+      }
+
+      return [...current, ...toAdd]
+    })
+
+    if (addedCount) resetScanState()
+    return addedCount
+  }
+
+  function handlePhotoUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files || [])
+    appendPhotos(files)
+    event.target.value = ''
+  }
+
+  function handleDragOver(event: React.DragEvent<HTMLElement>) {
+    event.preventDefault()
+    setIsDragActive(true)
+  }
+
+  function handleDragLeave(event: React.DragEvent<HTMLElement>) {
+    event.preventDefault()
+    setIsDragActive(false)
+  }
+
+  function handleDropOnUpload(event: React.DragEvent<HTMLElement>) {
+    event.preventDefault()
+    setIsDragActive(false)
+
+    const droppedFiles = Array.from(event.dataTransfer.files || []).filter((file) => file.type.startsWith('image/'))
+    appendPhotos(droppedFiles)
+
+    const droppedText = [event.dataTransfer.getData('text/uri-list'), event.dataTransfer.getData('text/plain')]
+      .join('\n')
+      .trim()
+
+    const addedLinks = droppedText ? appendPhotoUrls(droppedText) : 0
+
+    if (droppedFiles.length || addedLinks) {
+      setSavedMessage(
+        `Added ${droppedFiles.length} dropped image${droppedFiles.length === 1 ? '' : 's'}${addedLinks ? ` and ${addedLinks} photo link${addedLinks === 1 ? '' : 's'}` : ''}.`,
+      )
+    }
+  }
+
+  function handlePasteOnUpload(event: React.ClipboardEvent<HTMLElement>) {
+    const pastedImages = extractImagesFromClipboard(event.clipboardData)
+    const pastedText = event.clipboardData.getData('text')
+
+    if (!pastedImages.length && !pastedText.trim()) return
+
+    event.preventDefault()
+    appendPhotos(pastedImages)
+    const addedLinks = appendPhotoUrls(pastedText)
+
+    if (pastedImages.length || addedLinks) {
+      setSavedMessage(
+        `Added ${pastedImages.length} pasted image${pastedImages.length === 1 ? '' : 's'}${addedLinks ? ` and ${addedLinks} photo link${addedLinks === 1 ? '' : 's'}` : ''}.`,
+      )
+    }
+  }
+
+  async function pasteFromClipboard() {
+    if (!navigator.clipboard?.read) {
+      setSavedMessage('Clipboard read is not supported in this browser. Use Ctrl+V in the upload area instead.')
+      return
+    }
+
+    try {
+      const items = await navigator.clipboard.read()
+      const pastedFiles: File[] = []
+      const pastedTextChunks: string[] = []
+
+      await Promise.all(
+        items.map(async (item, itemIndex) => {
+          for (const type of item.types) {
+            const blob = await item.getType(type)
+            if (type.startsWith('image/')) {
+              pastedFiles.push(
+                new File([blob], `clipboard-photo-${Date.now()}-${itemIndex}.${type.split('/')[1] || 'png'}`, {
+                  type,
+                }),
+              )
+              continue
+            }
+
+            if (type === 'text/plain') {
+              pastedTextChunks.push(await blob.text())
+            }
+          }
+        }),
+      )
+
+      appendPhotos(pastedFiles)
+      const addedLinks = appendPhotoUrls(pastedTextChunks.join('\n'))
+
+      if (!pastedFiles.length && !addedLinks) {
+        setSavedMessage('Clipboard did not contain an image or photo URL.')
+      } else {
+        setSavedMessage(
+          `Added ${pastedFiles.length} image${pastedFiles.length === 1 ? '' : 's'}${addedLinks ? ` and ${addedLinks} photo link${addedLinks === 1 ? '' : 's'}` : ''} from clipboard.`,
+        )
+      }
+    } catch (error) {
+      setSavedMessage(
+        error instanceof Error
+          ? `Could not read clipboard: ${error.message}`
+          : 'Could not read clipboard. Grant clipboard permission and try again.',
+      )
+    }
+  }
+
+  function handleAddPhotoLinks() {
+    const added = appendPhotoUrls(photoLinkInput)
+    if (!added) {
+      setSavedMessage('Paste at least one image URL starting with http:// or https://.')
+      return
+    }
+
+    setPhotoLinkInput('')
+    setSavedMessage(`Added ${added} photo link${added === 1 ? '' : 's'}.`)
   }
 
   async function runDemoScan(modeLabel = 'Scan complete. Review and edit the detected clubs before saving.') {
@@ -190,16 +374,21 @@ export function ClubFlipFeaturePanel({ onConfirmToValue }: ClubFlipFeaturePanelP
     setSavedMessage('')
 
     try {
-      if (!photos.length) {
+      if (!photos.length && !photoUrls.length) {
         throw new Error('Upload at least one photo before scanning.')
       }
 
+      const photoPayloads = [
+        ...(await Promise.all(photos.map((photo) => readFileAsDataUrl(photo)))),
+        ...photoUrls,
+      ]
+
       const identifications = await Promise.all(
-        photos.map(async (photo) => {
+        photoPayloads.map(async (photoDataUrl) => {
           const response = await fetch(`${apiBase}/api/club-ocr`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ photoDataUrl: await readFileAsDataUrl(photo) }),
+            body: JSON.stringify({ photoDataUrl }),
           })
           const data = (await response.json()) as ClubOcrResponse
           if (!response.ok) throw new Error(data.error || 'Identification failed')
@@ -306,16 +495,47 @@ export function ClubFlipFeaturePanel({ onConfirmToValue }: ClubFlipFeaturePanelP
             Best photos: club faces, soles, shafts, grips, bag, and full set from above.
           </p>
 
-          <label className="upload-box">
+          <label
+            className={`upload-box ${isDragActive ? 'drag-active' : ''}`}
+            onPaste={handlePasteOnUpload}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDropOnUpload}
+          >
             <input type="file" accept="image/*" multiple onChange={handlePhotoUpload} />
             <strong>Choose photos</strong>
-            <span>Upload 1–8 images from a local listing</span>
+            <span>Upload, paste, or drop in 1-8 images from a local listing</span>
+            {isDragActive && <span className="drop-hint">Drop images or photo links to add them</span>}
           </label>
 
-          {photoPreviews.length > 0 && (
+          <div className="row-wrap upload-actions">
+            <button className="secondary-btn btn btn-secondary" onClick={() => void pasteFromClipboard()} type="button">
+              Paste From Clipboard
+            </button>
+          </div>
+
+          <label className="photo-link-field">
+            Paste photo links
+            <textarea
+              value={photoLinkInput}
+              onChange={(event) => setPhotoLinkInput(event.target.value)}
+              placeholder="Paste one or more image URLs or shared listing photo links"
+            />
+          </label>
+
+          <div className="row-wrap upload-actions">
+            <button className="secondary-btn btn btn-secondary" onClick={handleAddPhotoLinks} type="button">
+              Add Photo Links
+            </button>
+          </div>
+
+          {(photoPreviews.length > 0 || photoUrls.length > 0) && (
             <div className="photo-preview-grid">
               {photoPreviews.map((src, index) => (
                 <img key={src} src={src} alt={`Uploaded club photo ${index + 1}`} />
+              ))}
+              {photoUrls.map((src, index) => (
+                <img key={src} src={src} alt={`Pasted or shared club photo link ${index + 1}`} />
               ))}
             </div>
           )}
@@ -330,7 +550,7 @@ export function ClubFlipFeaturePanel({ onConfirmToValue }: ClubFlipFeaturePanelP
 
           <p className="helper-note">
             Use the bag scan button when you want every uploaded bag photo scanned together. Both buttons send the
-            uploaded photos to the server's OCR endpoint.
+            uploaded or linked photos to the server's OCR endpoint.
           </p>
         </div>
 
