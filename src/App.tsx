@@ -201,7 +201,7 @@ function App() {
   const [fetchingDeals, setFetchingDeals] = useState(false)
   const [apiReady, setApiReady] = useState(false)
 
-  const apiBase = 'http://127.0.0.1:3001'
+  const apiBase = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:3001'
 
   useEffect(() => localStorage.setItem('gft.leads', JSON.stringify(leads)), [leads])
   useEffect(() => localStorage.setItem('gft.inventory', JSON.stringify(inventory)), [inventory])
